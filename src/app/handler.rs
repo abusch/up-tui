@@ -44,10 +44,7 @@ pub fn handle_event(
                         tab.transactions = Some(transactions);
                     }
                     Err(e) => {
-                        state.set_status(
-                            format!("Failed to load transactions: {}", e),
-                            true,
-                        );
+                        state.set_status(format!("Failed to load transactions: {}", e), true);
                     }
                 }
             }
@@ -91,19 +88,19 @@ fn handle_normal_key(
             maybe_fetch_transactions(state, client, tx);
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            if let Some(tab) = state.current_tab_mut() {
-                if let Some(ref txns) = tab.transactions {
-                    if !txns.is_empty() && tab.selected < txns.len() - 1 {
-                        tab.selected += 1;
-                    }
-                }
+            if let Some(tab) = state.current_tab_mut()
+                && let Some(ref txns) = tab.transactions
+                && !txns.is_empty()
+                && tab.selected < txns.len() - 1
+            {
+                tab.selected += 1;
             }
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            if let Some(tab) = state.current_tab_mut() {
-                if tab.selected > 0 {
-                    tab.selected -= 1;
-                }
+            if let Some(tab) = state.current_tab_mut()
+                && tab.selected > 0
+            {
+                tab.selected -= 1;
             }
         }
         KeyCode::Char('g') => {
@@ -112,21 +109,19 @@ fn handle_normal_key(
             }
         }
         KeyCode::Char('G') => {
-            if let Some(tab) = state.current_tab_mut() {
-                if let Some(ref txns) = tab.transactions {
-                    if !txns.is_empty() {
-                        tab.selected = txns.len() - 1;
-                    }
-                }
+            if let Some(tab) = state.current_tab_mut()
+                && let Some(ref txns) = tab.transactions
+                && !txns.is_empty()
+            {
+                tab.selected = txns.len() - 1;
             }
         }
         KeyCode::Enter => {
-            if let Some(tab) = state.current_tab() {
-                if let Some(ref txns) = tab.transactions {
-                    if !txns.is_empty() {
-                        state.mode = AppMode::Detail;
-                    }
-                }
+            if let Some(tab) = state.current_tab()
+                && let Some(ref txns) = tab.transactions
+                && !txns.is_empty()
+            {
+                state.mode = AppMode::Detail;
             }
         }
         KeyCode::Char('r') => {
@@ -160,10 +155,11 @@ fn maybe_fetch_transactions(
     tx: &mpsc::UnboundedSender<AppEvent>,
 ) {
     let idx = state.active_tab;
-    if let Some(tab) = state.tabs.get(idx) {
-        if tab.transactions.is_none() && !tab.loading {
-            fetch_transactions(state, idx, client, tx);
-        }
+    if let Some(tab) = state.tabs.get(idx)
+        && tab.transactions.is_none()
+        && !tab.loading
+    {
+        fetch_transactions(state, idx, client, tx);
     }
 }
 
@@ -182,10 +178,7 @@ fn fetch_transactions(
         let tx = tx.clone();
         tokio::spawn(async move {
             let result = client.get_transactions(&account_id).await;
-            let _ = tx.send(AppEvent::TransactionsLoaded {
-                tab_index,
-                result,
-            });
+            let _ = tx.send(AppEvent::TransactionsLoaded { tab_index, result });
         });
     }
 }

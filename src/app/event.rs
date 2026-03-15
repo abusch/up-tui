@@ -15,9 +15,11 @@ pub enum AppEvent {
 }
 
 pub fn spawn_event_reader(tx: mpsc::UnboundedSender<AppEvent>) {
-    tokio::task::spawn_blocking(move || loop {
-        if let Ok(Event::Key(key)) = event::read() {
-            if tx.send(AppEvent::Key(key)).is_err() {
+    tokio::task::spawn_blocking(move || {
+        loop {
+            if let Ok(Event::Key(key)) = event::read()
+                && tx.send(AppEvent::Key(key)).is_err()
+            {
                 break;
             }
         }
