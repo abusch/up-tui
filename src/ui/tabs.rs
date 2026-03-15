@@ -19,12 +19,6 @@ pub fn draw_tabs(f: &mut Frame, area: Rect, state: &AppState) {
         .collect();
 
     let tabs = Tabs::new(titles)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Accounts ")
-                .style(Style::default().fg(palette.fg).bg(palette.bg)),
-        )
         .select(state.active_tab)
         .style(Style::default().fg(palette.muted))
         .highlight_style(

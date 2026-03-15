@@ -19,9 +19,9 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         .render(f.area(), f.buffer_mut());
 
     let chunks = Layout::vertical([
-        Constraint::Length(3), // tab bar
+        Constraint::Length(1), // tab bar
         Constraint::Fill(1),   // transaction list
-        Constraint::Length(3), // status bar
+        Constraint::Length(1), // status bar
     ])
     .split(f.area());
 

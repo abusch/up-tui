@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::Paragraph;
 
 use crate::app::state::AppState;
 
@@ -35,11 +35,7 @@ pub fn draw_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
         ]
     };
 
-    let paragraph = Paragraph::new(Line::from(spans)).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .style(Style::default().fg(palette.fg).bg(palette.bg)),
-    );
+    let paragraph = Paragraph::new(Line::from(spans));
 
     f.render_widget(paragraph, area);
 }
