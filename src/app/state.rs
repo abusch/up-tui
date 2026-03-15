@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
-use ratatui_themes::{Theme, ThemeName, ThemePalette};
+use ratatui_themes::{Theme, ThemePalette};
 
 use up_api::models::{Account, Transaction};
+
+use crate::config::Config;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AppMode {
@@ -36,10 +38,13 @@ pub struct AppState {
     pub should_quit: bool,
     pub categories: HashMap<String, String>,
     pub theme: Theme,
+    #[allow(dead_code)]
+    pub config: Config,
 }
 
 impl AppState {
-    pub fn new(theme_name: ThemeName) -> Self {
+    pub fn new(config: Config) -> Self {
+        let theme = Theme::new(config.theme_name());
         AppState {
             accounts: Vec::new(),
             tabs: Vec::new(),
@@ -49,7 +54,8 @@ impl AppState {
             status_is_error: false,
             should_quit: false,
             categories: HashMap::new(),
-            theme: Theme::new(theme_name),
+            theme,
+            config,
         }
     }
 
