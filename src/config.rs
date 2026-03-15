@@ -6,17 +6,12 @@ use std::path::PathBuf;
 #[derive(Deserialize)]
 pub struct Config {
     pub api_token: String,
-    #[serde(default)]
-    pub theme: Option<String>,
+    #[serde(default = "default_theme")]
+    pub theme: ThemeName,
 }
 
-impl Config {
-    pub fn theme_name(&self) -> ThemeName {
-        self.theme
-            .as_deref()
-            .and_then(|slug| ThemeName::all().iter().find(|t| t.slug() == slug).copied())
-            .unwrap_or(ThemeName::TokyoNight)
-    }
+fn default_theme() -> ThemeName {
+    ThemeName::TokyoNight
 }
 
 pub fn config_path() -> PathBuf {

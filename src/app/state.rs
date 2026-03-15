@@ -49,7 +49,6 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config: Config) -> Self {
-        let theme = Theme::new(config.theme_name());
         AppState {
             accounts: Vec::new(),
             tabs: Vec::new(),
@@ -59,7 +58,7 @@ impl AppState {
             status_is_error: false,
             should_quit: false,
             categories: HashMap::new(),
-            theme,
+            theme: Theme::new(config.theme),
             config,
             list_height: 0,
         }
