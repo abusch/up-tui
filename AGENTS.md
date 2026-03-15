@@ -115,6 +115,8 @@ All UI modules read `state.palette()` for colors — no hardcoded colors remain.
 
 All code must pass `cargo clippy --workspace` with zero warnings before being considered complete. Always run clippy after making changes and fix any warnings it reports.
 
+Run `cargo fmt --all` after making changes to ensure consistent formatting across the workspace.
+
 ## Error Handling
 
 - **Config errors**: Print to stderr and exit before entering TUI mode.

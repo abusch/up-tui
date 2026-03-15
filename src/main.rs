@@ -9,7 +9,7 @@ use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
 use up_api::client::UpClient;
 
-use app::event::{spawn_event_reader, AppEvent};
+use app::event::{AppEvent, spawn_event_reader};
 use app::handler::{fetch_accounts, fetch_categories, handle_event};
 use app::state::AppState;
 

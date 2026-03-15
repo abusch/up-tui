@@ -1,12 +1,12 @@
 use chrono::Local;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 
-use up_api::models::Transaction;
 use crate::app::state::AppState;
+use up_api::models::Transaction;
 
 pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
     let palette = state.palette();
@@ -35,7 +35,13 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
 
     let mut lines = Vec::new();
 
-    add_field(&mut lines, "Description", &txn.description, label_style, value_style);
+    add_field(
+        &mut lines,
+        "Description",
+        &txn.description,
+        label_style,
+        value_style,
+    );
 
     if let Some(ref raw) = txn.raw_text {
         add_field(&mut lines, "Raw Text", raw, label_style, value_style);
@@ -51,7 +57,13 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
         Span::styled(format_amount(txn), Style::default().fg(amount_color)),
     ]));
 
-    add_field(&mut lines, "Status", &txn.status.to_string(), label_style, value_style);
+    add_field(
+        &mut lines,
+        "Status",
+        &txn.status.to_string(),
+        label_style,
+        value_style,
+    );
 
     add_field(
         &mut lines,
@@ -92,9 +104,21 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
     }
 
     if let Some(ref round_up) = txn.round_up {
-        add_field(&mut lines, "Round Up", &round_up.amount.value, label_style, value_style);
+        add_field(
+            &mut lines,
+            "Round Up",
+            &round_up.amount.value,
+            label_style,
+            value_style,
+        );
         if let Some(ref boost) = round_up.boost_portion {
-            add_field(&mut lines, "Boost Portion", &boost.value, label_style, value_style);
+            add_field(
+                &mut lines,
+                "Boost Portion",
+                &boost.value,
+                label_style,
+                value_style,
+            );
         }
     }
 
@@ -109,10 +133,7 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
     }
 
     if let Some(ref card) = txn.card_purchase_method {
-        let suffix = card
-            .card_number_suffix
-            .as_deref()
-            .unwrap_or("****");
+        let suffix = card.card_number_suffix.as_deref().unwrap_or("****");
         add_field(
             &mut lines,
             "Card Method",
@@ -125,7 +146,11 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
     if txn.category.is_some() || txn.parent_category.is_some() {
         let display = match (&txn.parent_category, &txn.category) {
             (Some(parent), Some(cat)) => {
-                format!("{} / {}", state.category_name(parent), state.category_name(cat))
+                format!(
+                    "{} / {}",
+                    state.category_name(parent),
+                    state.category_name(cat)
+                )
             }
             (None, Some(cat)) => state.category_name(cat).to_string(),
             (Some(parent), None) => state.category_name(parent).to_string(),
@@ -135,7 +160,13 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
     }
 
     if !txn.tags.is_empty() {
-        add_field(&mut lines, "Tags", &txn.tags.join(", "), label_style, value_style);
+        add_field(
+            &mut lines,
+            "Tags",
+            &txn.tags.join(", "),
+            label_style,
+            value_style,
+        );
     }
 
     lines.push(Line::from(""));
@@ -156,7 +187,13 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
     f.render_widget(paragraph, area);
 }
 
-fn add_field(lines: &mut Vec<Line<'_>>, label: &str, value: &str, label_style: Style, value_style: Style) {
+fn add_field(
+    lines: &mut Vec<Line<'_>>,
+    label: &str,
+    value: &str,
+    label_style: Style,
+    value_style: Style,
+) {
     let padded_label = format!("{:14}", format!("{}:", label));
     lines.push(Line::from(vec![
         Span::styled(padded_label, label_style),

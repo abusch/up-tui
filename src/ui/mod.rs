@@ -3,10 +3,10 @@ pub mod tabs;
 pub mod transaction_detail;
 pub mod transaction_list;
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::Style;
 use ratatui::widgets::{Block, Widget};
-use ratatui::Frame;
 
 use crate::app::state::{AppMode, AppState};
 
@@ -19,7 +19,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         .render(f.area(), f.buffer_mut());
 
     let chunks = Layout::vertical([
-        Constraint::Length(3),  // tab bar
+        Constraint::Length(3), // tab bar
         Constraint::Fill(1),   // transaction list
         Constraint::Length(3), // status bar
     ])

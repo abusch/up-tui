@@ -3,9 +3,9 @@ use std::sync::Arc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc;
 
-use up_api::client::UpClient;
 use crate::app::event::AppEvent;
 use crate::app::state::{AppMode, AppState};
+use up_api::client::UpClient;
 
 pub fn handle_event(
     state: &mut AppState,

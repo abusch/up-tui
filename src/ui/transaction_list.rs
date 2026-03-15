@@ -1,11 +1,11 @@
 use chrono::Local;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
-use ratatui::Frame;
 
-use up_api::models::Transaction;
 use crate::app::state::AppState;
+use up_api::models::Transaction;
 
 pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
     let palette = state.palette();
