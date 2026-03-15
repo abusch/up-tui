@@ -1,6 +1,6 @@
 use chrono::Local;
 use ratatui::layout::{Constraint, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 use ratatui::Frame;
 
@@ -8,12 +8,16 @@ use crate::api::models::Transaction;
 use crate::app::state::AppState;
 
 pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
+    let palette = state.palette();
+    let base_style = Style::default().fg(palette.fg).bg(palette.bg);
+
     let tab = match state.current_tab() {
         Some(t) => t,
         None => {
             let block = Block::default()
                 .borders(Borders::ALL)
-                .title(" Transactions ");
+                .title(" Transactions ")
+                .style(base_style);
             f.render_widget(block, area);
             return;
         }
@@ -22,7 +26,8 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
     if tab.loading && tab.transactions.is_none() {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Transactions - Loading... ");
+            .title(" Transactions - Loading... ")
+            .style(base_style);
         f.render_widget(block, area);
         return;
     }
@@ -32,7 +37,8 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
         None => {
             let block = Block::default()
                 .borders(Borders::ALL)
-                .title(" Transactions ");
+                .title(" Transactions ")
+                .style(base_style);
             f.render_widget(block, area);
             return;
         }
@@ -41,7 +47,8 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
     if transactions.is_empty() {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Transactions - No transactions ");
+            .title(" Transactions - No transactions ")
+            .style(base_style);
         f.render_widget(block, area);
         return;
     }
@@ -54,7 +61,7 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
     ])
     .style(
         Style::default()
-            .fg(Color::Yellow)
+            .fg(palette.accent)
             .add_modifier(Modifier::BOLD),
     )
     .height(1);
@@ -66,24 +73,25 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
             let date = format_date(txn);
             let amount = format_amount(txn);
             let amount_color = if txn.amount.value_in_base_units >= 0 {
-                Color::Green
+                palette.success
             } else {
-                Color::Red
+                palette.error
             };
 
             let style = if i == tab.selected {
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .bg(palette.selection)
+                    .fg(palette.fg)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default()
+                Style::default().fg(palette.fg)
             };
 
             Row::new(vec![
                 Cell::from(date),
                 Cell::from(txn.description.clone()),
                 Cell::from(amount).style(Style::default().fg(amount_color)),
-                Cell::from(txn.status.to_string()),
+                Cell::from(txn.status.to_string()).style(Style::default().fg(palette.muted)),
             ])
             .style(style)
         })
@@ -104,10 +112,16 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
 
     let table = Table::new(rows, widths)
         .header(header)
-        .block(Block::default().borders(Borders::ALL).title(title))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .style(base_style),
+        )
         .row_highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                .bg(palette.selection)
+                .fg(palette.fg)
                 .add_modifier(Modifier::BOLD),
         );
 

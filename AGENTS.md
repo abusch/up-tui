@@ -12,9 +12,10 @@ The app reads its API token from `~/.config/up-tui/config.toml`:
 
 ```toml
 api_token = "up:yeah:xxxxxxxx"
+theme = "tokyo-night"  # optional, defaults to tokyo-night
 ```
 
-Config is validated before the TUI starts. Missing or invalid config prints an error to stderr and exits.
+The `theme` field accepts any slug from `ThemeName::slug()` (e.g. `"dracula"`, `"catppuccin-mocha"`, `"nord"`). Config is validated before the TUI starts. Missing or invalid config prints an error to stderr and exits.
 
 ## Architecture
 
@@ -40,6 +41,7 @@ The main loop is: draw → recv event → handle event → repeat.
 - `active_tab` — currently selected tab index
 - `mode` — `Normal` (browsing) or `Detail` (viewing transaction overlay)
 - `categories` — cached `HashMap<String, String>` mapping category IDs to display names, fetched once on startup via `GET /categories`
+- `theme` — current `Theme` from ratatui-themes, provides the active `ThemePalette` via `state.palette()`
 - `status_message` / `status_is_error` — status bar content
 
 ### Lazy Loading
@@ -93,10 +95,24 @@ src/
 | `g` / `G`       | Normal | Jump to top / bottom      |
 | `Enter`          | Normal | Open detail overlay       |
 | `r`              | Normal | Refresh current tab       |
+| `t` / `T`       | Normal | Next / previous theme     |
 | `Esc` / `q`     | Detail | Close overlay             |
+
+## Theming
+
+Powered by the `ratatui-themes` crate. The initial theme is read from the config file (`theme` field, slug format); defaults to Tokyo Night. Users can cycle through all 15 built-in themes at runtime with `t`/`T`.
+
+All UI modules read `state.palette()` for colors — no hardcoded colors remain. The palette colors are mapped as follows:
+
+- `palette.success` / `palette.error` — positive/negative amounts, status bar success/error messages
+- `palette.accent` — active tab highlight, table header, keybinding hints in status bar
+- `palette.secondary` — field labels in the detail overlay
+- `palette.muted` — inactive tabs, status column, hint text
+- `palette.selection` — selected row background
+- `palette.bg` / `palette.fg` — base background and foreground for all blocks and text
 
 ## Error Handling
 
 - **Config errors**: Print to stderr and exit before entering TUI mode.
-- **API/network errors**: Display in the status bar (red). The app remains usable with stale data.
+- **API/network errors**: Display in the status bar (using `palette.error`). The app remains usable with stale data.
 - **Terminal/panic errors**: Handled by `ratatui::run()` which restores the terminal automatically.

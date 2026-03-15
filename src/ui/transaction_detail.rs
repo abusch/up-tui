@@ -1,6 +1,6 @@
 use chrono::Local;
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
@@ -9,6 +9,8 @@ use crate::api::models::Transaction;
 use crate::app::state::AppState;
 
 pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
+    let palette = state.palette();
+
     let tab = match state.current_tab() {
         Some(t) => t,
         None => return,
@@ -26,28 +28,30 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
 
     f.render_widget(Clear, area);
 
+    let label_style = Style::default()
+        .fg(palette.secondary)
+        .add_modifier(Modifier::BOLD);
+    let value_style = Style::default().fg(palette.fg);
+
     let mut lines = Vec::new();
 
-    add_field(&mut lines, "Description", &txn.description);
+    add_field(&mut lines, "Description", &txn.description, label_style, value_style);
 
     if let Some(ref raw) = txn.raw_text {
-        add_field(&mut lines, "Raw Text", raw);
+        add_field(&mut lines, "Raw Text", raw, label_style, value_style);
     }
 
     let amount_color = if txn.amount.value_in_base_units >= 0 {
-        Color::Green
+        palette.success
     } else {
-        Color::Red
+        palette.error
     };
     lines.push(Line::from(vec![
-        Span::styled(
-            "Amount:       ",
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
+        Span::styled("Amount:       ", label_style),
         Span::styled(format_amount(txn), Style::default().fg(amount_color)),
     ]));
 
-    add_field(&mut lines, "Status", &txn.status.to_string());
+    add_field(&mut lines, "Status", &txn.status.to_string(), label_style, value_style);
 
     add_field(
         &mut lines,
@@ -56,6 +60,8 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
             .with_timezone(&Local)
             .format("%Y-%m-%d %H:%M:%S")
             .to_string(),
+        label_style,
+        value_style,
     );
 
     if let Some(ref settled) = txn.settled_at {
@@ -66,11 +72,13 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
                 .with_timezone(&Local)
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string(),
+            label_style,
+            value_style,
         );
     }
 
     if let Some(ref msg) = txn.message {
-        add_field(&mut lines, "Message", msg);
+        add_field(&mut lines, "Message", msg, label_style, value_style);
     }
 
     if let Some(ref foreign) = txn.foreign_amount {
@@ -78,13 +86,15 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
             &mut lines,
             "Foreign Amount",
             &format!("{} {}", foreign.value, foreign.currency_code),
+            label_style,
+            value_style,
         );
     }
 
     if let Some(ref round_up) = txn.round_up {
-        add_field(&mut lines, "Round Up", &round_up.amount.value);
+        add_field(&mut lines, "Round Up", &round_up.amount.value, label_style, value_style);
         if let Some(ref boost) = round_up.boost_portion {
-            add_field(&mut lines, "Boost Portion", &boost.value);
+            add_field(&mut lines, "Boost Portion", &boost.value, label_style, value_style);
         }
     }
 
@@ -93,6 +103,8 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
             &mut lines,
             "Cashback",
             &format!("{} ({})", cashback.amount.value, cashback.description),
+            label_style,
+            value_style,
         );
     }
 
@@ -105,6 +117,8 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
             &mut lines,
             "Card Method",
             &format!("{} (****{})", card.method, suffix),
+            label_style,
+            value_style,
         );
     }
 
@@ -117,17 +131,17 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
             (Some(parent), None) => state.category_name(parent).to_string(),
             (None, None) => unreachable!(),
         };
-        add_field(&mut lines, "Category", &display);
+        add_field(&mut lines, "Category", &display, label_style, value_style);
     }
 
     if !txn.tags.is_empty() {
-        add_field(&mut lines, "Tags", &txn.tags.join(", "));
+        add_field(&mut lines, "Tags", &txn.tags.join(", "), label_style, value_style);
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "Press Esc or q to close",
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(palette.muted),
     )));
 
     let paragraph = Paragraph::new(lines)
@@ -135,18 +149,18 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(" Transaction Detail ")
-                .style(Style::default().fg(Color::White)),
+                .style(Style::default().fg(palette.fg).bg(palette.bg)),
         )
         .wrap(Wrap { trim: false });
 
     f.render_widget(paragraph, area);
 }
 
-fn add_field(lines: &mut Vec<Line<'_>>, label: &str, value: &str) {
+fn add_field(lines: &mut Vec<Line<'_>>, label: &str, value: &str, label_style: Style, value_style: Style) {
     let padded_label = format!("{:14}", format!("{}:", label));
     lines.push(Line::from(vec![
-        Span::styled(padded_label, Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(value.to_string()),
+        Span::styled(padded_label, label_style),
+        Span::styled(value.to_string(), value_style),
     ]));
 }
 

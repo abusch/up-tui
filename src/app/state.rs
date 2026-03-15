@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use ratatui_themes::{Theme, ThemeName, ThemePalette};
+
 use crate::api::models::{Account, Transaction};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,10 +35,11 @@ pub struct AppState {
     pub status_is_error: bool,
     pub should_quit: bool,
     pub categories: HashMap<String, String>,
+    pub theme: Theme,
 }
 
 impl AppState {
-    pub fn new() -> Self {
+    pub fn new(theme_name: ThemeName) -> Self {
         AppState {
             accounts: Vec::new(),
             tabs: Vec::new(),
@@ -46,7 +49,20 @@ impl AppState {
             status_is_error: false,
             should_quit: false,
             categories: HashMap::new(),
+            theme: Theme::new(theme_name),
         }
+    }
+
+    pub fn palette(&self) -> ThemePalette {
+        self.theme.palette()
+    }
+
+    pub fn next_theme(&mut self) {
+        self.theme = Theme::new(self.theme.name.next());
+    }
+
+    pub fn prev_theme(&mut self) {
+        self.theme = Theme::new(self.theme.name.prev());
     }
 
     pub fn set_accounts(&mut self, accounts: Vec<Account>) {

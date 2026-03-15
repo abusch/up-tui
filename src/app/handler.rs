@@ -133,6 +133,14 @@ fn handle_normal_key(
             let idx = state.active_tab;
             fetch_transactions(state, idx, client, tx);
         }
+        KeyCode::Char('t') => {
+            state.next_theme();
+            state.set_status(format!("Theme: {}", state.theme.name.display_name()), false);
+        }
+        KeyCode::Char('T') => {
+            state.prev_theme();
+            state.set_status(format!("Theme: {}", state.theme.name.display_name()), false);
+        }
         _ => {}
     }
 }

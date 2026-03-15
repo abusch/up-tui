@@ -12,6 +12,7 @@ A terminal UI for [Up Banking](https://up.com.au/) that lets you browse your acc
 - Vim-style keyboard navigation
 - Lazy-loaded transactions per account
 - Refresh data on demand
+- 15 built-in color themes, switchable at runtime
 
 ## Setup
 
@@ -24,7 +25,15 @@ A terminal UI for [Up Banking](https://up.com.au/) that lets you browse your acc
    echo 'api_token = "up:yeah:your-token-here"' > ~/.config/up-tui/config.toml
    ```
 
-3. Build and run:
+3. Optionally set a theme (defaults to Tokyo Night):
+
+   ```toml
+   theme = "dracula"
+   ```
+
+   Available themes: `tokyo-night`, `dracula`, `nord`, `catppuccin-mocha`, `catppuccin-latte`, `gruvbox-dark`, `gruvbox-light`, `solarized-dark`, `solarized-light`, `monokai-pro`, `rose-pine`, `kanagawa`, `everforest`, `cyberpunk`, `one-dark-pro`
+
+4. Build and run:
 
    ```sh
    cargo run
@@ -42,4 +51,5 @@ A terminal UI for [Up Banking](https://up.com.au/) that lets you browse your acc
 | `Enter`            | View transaction detail |
 | `Esc` / `q`        | Close detail / quit  |
 | `r`                | Refresh transactions |
+| `t` / `T`          | Next / previous theme |
 | `Ctrl+C`           | Quit                 |

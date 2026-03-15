@@ -24,16 +24,21 @@ fn main() -> Result<()> {
         }
     };
 
+    let theme_name = cfg.theme_name();
     let client = Arc::new(UpClient::new(&cfg.api_token)?);
 
     let rt = tokio::runtime::Runtime::new()?;
-    ratatui::run(|terminal| rt.block_on(run_app(terminal, client)))?;
+    ratatui::run(|terminal| rt.block_on(run_app(terminal, client, theme_name)))?;
 
     Ok(())
 }
 
-async fn run_app(terminal: &mut DefaultTerminal, client: Arc<UpClient>) -> Result<()> {
-    let mut state = AppState::new();
+async fn run_app(
+    terminal: &mut DefaultTerminal,
+    client: Arc<UpClient>,
+    theme_name: ratatui_themes::ThemeName,
+) -> Result<()> {
+    let mut state = AppState::new(theme_name);
     state.set_status("Loading accounts...".into(), false);
 
     let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
