@@ -1,5 +1,6 @@
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyEvent};
+use crossterm::event::{Event, EventStream, KeyEvent};
+use futures::StreamExt;
 use tokio::sync::mpsc;
 
 use up_api::models::{Account, Transaction};
@@ -15,12 +16,11 @@ pub enum AppEvent {
 }
 
 pub fn spawn_event_reader(tx: mpsc::UnboundedSender<AppEvent>) {
-    tokio::task::spawn_blocking(move || {
-        loop {
-            if let Ok(Event::Key(key)) = event::read()
-                && tx.send(AppEvent::Key(key)).is_err()
-            {
-                break;
+    tokio::task::spawn(async move {
+        let mut events = EventStream::new();
+        while let Some(Ok(event)) = events.next().await {
+            if let Event::Key(key) = event {
+                let _ = tx.send(AppEvent::Key(key));
             }
         }
     });
