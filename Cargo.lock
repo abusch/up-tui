@@ -2551,6 +2551,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "up-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "up-tui"
 version = "0.1.0"
 dependencies = [
@@ -2560,11 +2571,10 @@ dependencies = [
  "dirs",
  "ratatui",
  "ratatui-themes",
- "reqwest",
  "serde",
- "serde_json",
  "tokio",
  "toml",
+ "up-api",
 ]
 
 [[package]]

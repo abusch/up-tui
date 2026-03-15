@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc;
 
-use crate::api::client::UpClient;
+use up_api::client::UpClient;
 use crate::app::event::AppEvent;
 use crate::app::state::{AppMode, AppState};
 

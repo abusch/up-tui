@@ -2,7 +2,7 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyEvent};
 use tokio::sync::mpsc;
 
-use crate::api::models::{Account, Transaction};
+use up_api::models::{Account, Transaction};
 
 pub enum AppEvent {
     Key(KeyEvent),

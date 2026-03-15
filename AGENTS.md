@@ -111,6 +111,10 @@ All UI modules read `state.palette()` for colors — no hardcoded colors remain.
 - `palette.selection` — selected row background
 - `palette.bg` / `palette.fg` — base background and foreground for all blocks and text
 
+## Code Quality
+
+All code must pass `cargo clippy --workspace` with zero warnings before being considered complete. Always run clippy after making changes and fix any warnings it reports.
+
 ## Error Handling
 
 - **Config errors**: Print to stderr and exit before entering TUI mode.

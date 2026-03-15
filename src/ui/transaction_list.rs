@@ -4,7 +4,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 use ratatui::Frame;
 
-use crate::api::models::Transaction;
+use up_api::models::Transaction;
 use crate::app::state::AppState;
 
 pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {

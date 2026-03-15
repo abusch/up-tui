@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use ratatui_themes::{Theme, ThemeName, ThemePalette};
 
-use crate::api::models::{Account, Transaction};
+use up_api::models::{Account, Transaction};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AppMode {
@@ -77,10 +77,6 @@ impl AppState {
 
     pub fn current_tab_mut(&mut self) -> Option<&mut TabState> {
         self.tabs.get_mut(self.active_tab)
-    }
-
-    pub fn current_account(&self) -> Option<&Account> {
-        self.accounts.get(self.active_tab)
     }
 
     pub fn next_tab(&mut self) {

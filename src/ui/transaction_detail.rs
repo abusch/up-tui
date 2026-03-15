@@ -5,7 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::api::models::Transaction;
+use up_api::models::Transaction;
 use crate::app::state::AppState;
 
 pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
