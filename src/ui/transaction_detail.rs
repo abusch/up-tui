@@ -108,6 +108,18 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
         );
     }
 
+    if let Some(ref category) = txn.category {
+        add_field(&mut lines, "Category", category);
+    }
+
+    if let Some(ref parent) = txn.parent_category {
+        add_field(&mut lines, "Parent Cat.", parent);
+    }
+
+    if !txn.tags.is_empty() {
+        add_field(&mut lines, "Tags", &txn.tags.join(", "));
+    }
+
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "Press Esc or q to close",

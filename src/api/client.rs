@@ -34,7 +34,7 @@ impl UpClient {
             "{}/accounts/{}/transactions?page[size]=50",
             BASE_URL, account_id
         );
-        let resp: JsonApiResponse<Vec<Resource<TransactionAttributes>>> =
+        let resp: JsonApiResponse<Vec<Resource<TransactionAttributes, TransactionRelationships>>> =
             self.client.get(&url).send().await?.error_for_status()?.json().await?;
         Ok(resp.data.into_iter().map(Transaction::from).collect())
     }

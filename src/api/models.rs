@@ -16,12 +16,40 @@ pub struct PaginationLinks {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Resource<A> {
+pub struct Resource<A, R = serde_json::Value> {
     pub id: String,
     #[serde(rename = "type")]
     pub resource_type: String,
     pub attributes: A,
-    pub relationships: Option<serde_json::Value>,
+    #[serde(default)]
+    pub relationships: R,
+}
+
+// --- JSON:API relationship types ---
+
+#[derive(Debug, Deserialize)]
+pub struct RelationshipData {
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToOneRelationship {
+    pub data: Option<RelationshipData>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ToManyRelationship {
+    pub data: Vec<RelationshipData>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct TransactionRelationships {
+    #[serde(default)]
+    pub category: Option<ToOneRelationship>,
+    #[serde(default, rename = "parentCategory")]
+    pub parent_category: Option<ToOneRelationship>,
+    #[serde(default)]
+    pub tags: Option<ToManyRelationship>,
 }
 
 // --- Account types ---
@@ -142,10 +170,29 @@ pub struct Transaction {
     pub created_at: DateTime<Utc>,
     pub round_up: Option<RoundUp>,
     pub cashback: Option<Cashback>,
+    pub category: Option<String>,
+    pub parent_category: Option<String>,
+    pub tags: Vec<String>,
 }
 
-impl From<Resource<TransactionAttributes>> for Transaction {
-    fn from(r: Resource<TransactionAttributes>) -> Self {
+impl From<Resource<TransactionAttributes, TransactionRelationships>> for Transaction {
+    fn from(r: Resource<TransactionAttributes, TransactionRelationships>) -> Self {
+        let category = r
+            .relationships
+            .category
+            .and_then(|rel| rel.data)
+            .map(|d| d.id);
+        let parent_category = r
+            .relationships
+            .parent_category
+            .and_then(|rel| rel.data)
+            .map(|d| d.id);
+        let tags = r
+            .relationships
+            .tags
+            .map(|rel| rel.data.into_iter().map(|d| d.id).collect())
+            .unwrap_or_default();
+
         Transaction {
             id: r.id,
             status: r.attributes.status,
@@ -159,6 +206,9 @@ impl From<Resource<TransactionAttributes>> for Transaction {
             created_at: r.attributes.created_at,
             round_up: r.attributes.round_up,
             cashback: r.attributes.cashback,
+            category,
+            parent_category,
+            tags,
         }
     }
 }

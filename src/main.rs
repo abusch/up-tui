@@ -14,8 +14,7 @@ use app::event::{spawn_event_reader, AppEvent};
 use app::handler::{fetch_accounts, handle_event};
 use app::state::AppState;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     // Load config before entering TUI mode
     let cfg = match config::load_config() {
         Ok(c) => c,
@@ -27,8 +26,8 @@ async fn main() -> Result<()> {
 
     let client = Arc::new(UpClient::new(&cfg.api_token)?);
 
-    let handle = tokio::runtime::Handle::current();
-    ratatui::run(|terminal| handle.block_on(run_app(terminal, client)))?;
+    let rt = tokio::runtime::Runtime::new()?;
+    ratatui::run(|terminal| rt.block_on(run_app(terminal, client)))?;
 
     Ok(())
 }
