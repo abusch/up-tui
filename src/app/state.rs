@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::api::models::{Account, Transaction};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -30,6 +32,7 @@ pub struct AppState {
     pub status_message: Option<String>,
     pub status_is_error: bool,
     pub should_quit: bool,
+    pub categories: HashMap<String, String>,
 }
 
 impl AppState {
@@ -42,6 +45,7 @@ impl AppState {
             status_message: None,
             status_is_error: false,
             should_quit: false,
+            categories: HashMap::new(),
         }
     }
 
@@ -87,5 +91,9 @@ impl AppState {
     pub fn clear_status(&mut self) {
         self.status_message = None;
         self.status_is_error = false;
+    }
+
+    pub fn category_name<'a>(&'a self, id: &'a str) -> &'a str {
+        self.categories.get(id).map(|s| s.as_str()).unwrap_or(id)
     }
 }

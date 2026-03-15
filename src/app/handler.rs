@@ -28,6 +28,14 @@ pub fn handle_event(
                 state.set_status(format!("Failed to load accounts: {}", e), true);
             }
         },
+        AppEvent::CategoriesLoaded(result) => match result {
+            Ok(categories) => {
+                state.categories = categories.into_iter().collect();
+            }
+            Err(e) => {
+                state.set_status(format!("Failed to load categories: {}", e), true);
+            }
+        },
         AppEvent::TransactionsLoaded { tab_index, result } => {
             if let Some(tab) = state.tabs.get_mut(tab_index) {
                 tab.loading = false;
@@ -172,6 +180,15 @@ fn fetch_transactions(
             });
         });
     }
+}
+
+pub fn fetch_categories(client: &Arc<UpClient>, tx: &mpsc::UnboundedSender<AppEvent>) {
+    let client = Arc::clone(client);
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let result = client.get_categories().await;
+        let _ = tx.send(AppEvent::CategoriesLoaded(result));
+    });
 }
 
 pub fn fetch_accounts(client: &Arc<UpClient>, tx: &mpsc::UnboundedSender<AppEvent>) {

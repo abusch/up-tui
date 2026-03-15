@@ -11,6 +11,7 @@ pub enum AppEvent {
         tab_index: usize,
         result: Result<Vec<Transaction>>,
     },
+    CategoriesLoaded(Result<Vec<(String, String)>>),
 }
 
 pub fn spawn_event_reader(tx: mpsc::UnboundedSender<AppEvent>) {

@@ -27,7 +27,7 @@ Config is validated before the TUI starts. Missing or invalid config prints an e
 All input and API results flow through a single `tokio::sync::mpsc::unbounded_channel` of `AppEvent`:
 
 - **Key events**: A blocking crossterm reader runs on `tokio::task::spawn_blocking` and sends `AppEvent::Key` into the channel.
-- **API results**: Async tasks send `AppEvent::AccountsLoaded` or `AppEvent::TransactionsLoaded` when HTTP requests complete.
+- **API results**: Async tasks send `AppEvent::AccountsLoaded`, `AppEvent::TransactionsLoaded`, or `AppEvent::CategoriesLoaded` when HTTP requests complete.
 
 The main loop is: draw → recv event → handle event → repeat.
 
@@ -39,6 +39,7 @@ The main loop is: draw → recv event → handle event → repeat.
 - `tabs` — one `TabState` per account, each tracking its transaction list, selected index, and loading flag
 - `active_tab` — currently selected tab index
 - `mode` — `Normal` (browsing) or `Detail` (viewing transaction overlay)
+- `categories` — cached `HashMap<String, String>` mapping category IDs to display names, fetched once on startup via `GET /categories`
 - `status_message` / `status_is_error` — status bar content
 
 ### Lazy Loading
@@ -54,7 +55,7 @@ src/
 
   api/
     mod.rs             Re-exports
-    client.rs          UpClient with Bearer auth, account/transaction endpoints
+    client.rs          UpClient with Bearer auth, account/transaction/category endpoints
     models.rs          JSON:API envelope types, relationship types, domain structs
 
   app/
@@ -76,7 +77,9 @@ src/
 - Base URL: `https://api.up.com.au/api/v1`
 - Auth: `Authorization: Bearer {token}` set as a default header on reqwest::Client
 - `Resource<A, R>` is generic over attributes (`A`) and relationships (`R`, defaults to `serde_json::Value`)
-- Transaction relationships (category, parentCategory, tags) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct
+- Transaction relationships (category, parentCategory, tags) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs
+- `GET /categories` is called once on startup to populate a category ID → display name cache in `AppState`. The detail view resolves IDs to names via `state.category_name()`, falling back to the raw ID if the cache hasn't loaded yet
+- Categories are hierarchical. The detail view displays them on a single line as "Parent / Category" (e.g. "Good Life / Restaurants & Cafes")
 
 ## Key Bindings
 

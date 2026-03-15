@@ -52,6 +52,13 @@ pub struct TransactionRelationships {
     pub tags: Option<ToManyRelationship>,
 }
 
+// --- Category types ---
+
+#[derive(Debug, Deserialize)]
+pub struct CategoryAttributes {
+    pub name: String,
+}
+
 // --- Account types ---
 
 #[derive(Debug, Deserialize)]

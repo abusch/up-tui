@@ -22,6 +22,17 @@ impl UpClient {
         Ok(UpClient { client })
     }
 
+    pub async fn get_categories(&self) -> Result<Vec<(String, String)>> {
+        let url = format!("{}/categories", BASE_URL);
+        let resp: JsonApiResponse<Vec<Resource<CategoryAttributes>>> =
+            self.client.get(&url).send().await?.error_for_status()?.json().await?;
+        Ok(resp
+            .data
+            .into_iter()
+            .map(|r| (r.id, r.attributes.name))
+            .collect())
+    }
+
     pub async fn get_accounts(&self) -> Result<Vec<Account>> {
         let url = format!("{}/accounts?page[size]=100", BASE_URL);
         let resp: JsonApiResponse<Vec<Resource<AccountAttributes>>> =

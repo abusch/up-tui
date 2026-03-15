@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 
 use api::client::UpClient;
 use app::event::{spawn_event_reader, AppEvent};
-use app::handler::{fetch_accounts, handle_event};
+use app::handler::{fetch_accounts, fetch_categories, handle_event};
 use app::state::AppState;
 
 fn main() -> Result<()> {
@@ -41,8 +41,9 @@ async fn run_app(terminal: &mut DefaultTerminal, client: Arc<UpClient>) -> Resul
     // Spawn crossterm event reader
     spawn_event_reader(tx.clone());
 
-    // Fetch accounts on startup
+    // Fetch accounts and categories on startup
     fetch_accounts(&client, &tx);
+    fetch_categories(&client, &tx);
 
     loop {
         terminal.draw(|f| ui::draw(f, &state))?;

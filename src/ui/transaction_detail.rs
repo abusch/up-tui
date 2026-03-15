@@ -108,12 +108,16 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
         );
     }
 
-    if let Some(ref category) = txn.category {
-        add_field(&mut lines, "Category", category);
-    }
-
-    if let Some(ref parent) = txn.parent_category {
-        add_field(&mut lines, "Parent Cat.", parent);
+    if txn.category.is_some() || txn.parent_category.is_some() {
+        let display = match (&txn.parent_category, &txn.category) {
+            (Some(parent), Some(cat)) => {
+                format!("{} / {}", state.category_name(parent), state.category_name(cat))
+            }
+            (None, Some(cat)) => state.category_name(cat).to_string(),
+            (Some(parent), None) => state.category_name(parent).to_string(),
+            (None, None) => unreachable!(),
+        };
+        add_field(&mut lines, "Category", &display);
     }
 
     if !txn.tags.is_empty() {
