@@ -3,18 +3,10 @@ mod app;
 mod config;
 mod ui;
 
-use std::io;
-use std::panic;
 use std::sync::Arc;
 
 use anyhow::Result;
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
-use crossterm::execute;
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
-use ratatui::backend::CrosstermBackend;
-use ratatui::Terminal;
+use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
 
 use api::client::UpClient;
@@ -35,37 +27,13 @@ async fn main() -> Result<()> {
 
     let client = Arc::new(UpClient::new(&cfg.api_token)?);
 
-    // Set up panic hook to restore terminal
-    let default_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |info| {
-        let _ = restore_terminal();
-        default_hook(info);
-    }));
-
-    // Set up terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let result = run_app(&mut terminal, client).await;
-
-    // Restore terminal
-    restore_terminal()?;
-
-    if let Err(e) = result {
-        eprintln!("Error: {:#}", e);
-        std::process::exit(1);
-    }
+    let handle = tokio::runtime::Handle::current();
+    ratatui::run(|terminal| handle.block_on(run_app(terminal, client)))?;
 
     Ok(())
 }
 
-async fn run_app(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    client: Arc<UpClient>,
-) -> Result<()> {
+async fn run_app(terminal: &mut DefaultTerminal, client: Arc<UpClient>) -> Result<()> {
     let mut state = AppState::new();
     state.set_status("Loading accounts...".into(), false);
 
@@ -89,15 +57,5 @@ async fn run_app(
         }
     }
 
-    Ok(())
-}
-
-fn restore_terminal() -> Result<()> {
-    disable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
     Ok(())
 }
