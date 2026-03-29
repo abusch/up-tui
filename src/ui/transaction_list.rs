@@ -57,7 +57,6 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
         Cell::from("Date"),
         Cell::from("Description"),
         Cell::from("Amount"),
-        Cell::from("Status"),
     ])
     .style(
         Style::default()
@@ -91,7 +90,6 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
                 Cell::from(date),
                 Cell::from(txn.description.clone()),
                 Cell::from(amount).style(Style::default().fg(amount_color)),
-                Cell::from(txn.status.to_string()).style(Style::default().fg(palette.muted)),
             ])
             .style(style)
         })
@@ -107,7 +105,6 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
         Constraint::Length(14),
         Constraint::Fill(1),
         Constraint::Length(12),
-        Constraint::Length(6),
     ];
 
     let table = Table::new(rows, widths)
