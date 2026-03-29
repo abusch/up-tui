@@ -71,10 +71,10 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
         .map(|(i, txn)| {
             let date = format_date(txn);
             let amount = format_amount(txn);
-            let amount_color = if txn.amount.value_in_base_units >= 0 {
-                palette.success
+            let amount_style = if txn.amount.value_in_base_units >= 0 {
+                Style::default().fg(palette.success)
             } else {
-                palette.error
+                Style::default().fg(palette.fg)
             };
 
             let style = if i == tab.selected {
@@ -89,7 +89,7 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
             Row::new(vec![
                 Cell::from(date),
                 Cell::from(txn.description.clone()),
-                Cell::from(amount).style(Style::default().fg(amount_color)),
+                Cell::from(amount).style(amount_style),
             ])
             .style(style)
         })
@@ -138,6 +138,6 @@ fn format_amount(txn: &Transaction) -> String {
     if cents >= 0 {
         format!("+${:.2}", abs)
     } else {
-        format!("-${:.2}", abs)
+        format!("${:.2}", abs)
     }
 }
