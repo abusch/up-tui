@@ -10,7 +10,7 @@ use ratatui::widgets::{Block, Widget};
 
 use crate::app::state::{AppMode, AppState};
 
-pub fn draw(f: &mut Frame, state: &AppState) {
+pub fn draw(f: &mut Frame, state: &mut AppState) {
     let palette = state.palette();
 
     // Fill entire background with theme color
@@ -24,6 +24,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Constraint::Length(1), // status bar
     ])
     .split(f.area());
+
+    // Record the list area height so key handlers can use it for page scrolling.
+    // Subtract 3 for borders (2) and header row (1).
+    state.list_height = chunks[1].height.saturating_sub(3);
 
     tabs::draw_tabs(f, chunks[0], state);
     transaction_list::draw_transaction_list(f, chunks[1], state);

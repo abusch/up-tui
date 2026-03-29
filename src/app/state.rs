@@ -40,6 +40,8 @@ pub struct AppState {
     pub theme: Theme,
     #[allow(dead_code)]
     pub config: Config,
+    /// Height of the transaction list area (in rows), updated during rendering.
+    pub list_height: u16,
 }
 
 impl AppState {
@@ -56,6 +58,7 @@ impl AppState {
             categories: HashMap::new(),
             theme,
             config,
+            list_height: 0,
         }
     }
 

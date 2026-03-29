@@ -103,6 +103,21 @@ fn handle_normal_key(
                 tab.selected -= 1;
             }
         }
+        KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let page = state.list_height as usize;
+            if let Some(tab) = state.current_tab_mut()
+                && let Some(ref txns) = tab.transactions
+                && !txns.is_empty()
+            {
+                tab.selected = (tab.selected + page).min(txns.len() - 1);
+            }
+        }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            let page = state.list_height as usize;
+            if let Some(tab) = state.current_tab_mut() {
+                tab.selected = tab.selected.saturating_sub(page);
+            }
+        }
         KeyCode::Char('g') => {
             if let Some(tab) = state.current_tab_mut() {
                 tab.selected = 0;

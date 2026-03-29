@@ -49,7 +49,7 @@ async fn run_app(
     fetch_categories(&client, &tx);
 
     loop {
-        terminal.draw(|f| ui::draw(f, &state))?;
+        terminal.draw(|f| ui::draw(f, &mut state))?;
 
         if let Some(event) = rx.recv().await {
             handle_event(&mut state, event, &client, &tx);
