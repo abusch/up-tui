@@ -1,8 +1,9 @@
 use chrono::Local;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
 
 use crate::app::state::AppState;
 use up_api::models::Transaction;
@@ -53,45 +54,44 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
         return;
     }
 
-    let header = Row::new(vec![
-        Cell::from("Date"),
-        Cell::from("Description"),
-        Cell::from("Amount"),
-    ])
-    .style(
-        Style::default()
-            .fg(palette.accent)
-            .add_modifier(Modifier::BOLD),
-    )
-    .height(1);
+    let inner_width = area.width.saturating_sub(2) as usize;
 
-    let rows: Vec<Row> = transactions
+    let items: Vec<ListItem> = transactions
         .iter()
-        .enumerate()
-        .map(|(i, txn)| {
+        .map(|txn| {
             let date = format_date(txn);
             let amount = format_amount(txn);
+            let amount_len = amount.len();
+            let max_desc_len = inner_width.saturating_sub(amount_len + 1);
+
+            let desc = &txn.description;
+            let truncated_desc: String = if desc.chars().count() > max_desc_len {
+                let mut s: String = desc.chars().take(max_desc_len.saturating_sub(1)).collect();
+                s.push('…');
+                s
+            } else {
+                desc.clone()
+            };
+
+            let padding = inner_width.saturating_sub(truncated_desc.len() + amount_len);
+
             let amount_style = if txn.amount.value_in_base_units >= 0 {
                 Style::default().fg(palette.success)
             } else {
                 Style::default().fg(palette.fg)
             };
 
-            let style = if i == tab.selected {
-                Style::default()
-                    .bg(palette.selection)
-                    .fg(palette.fg)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(palette.fg)
-            };
+            let line1 = Line::from(vec![
+                Span::raw(truncated_desc),
+                Span::raw(" ".repeat(padding)),
+                Span::styled(amount, amount_style),
+            ]);
+            let line2 = Line::from(Span::styled(
+                date,
+                Style::default().fg(palette.muted),
+            ));
 
-            Row::new(vec![
-                Cell::from(date),
-                Cell::from(txn.description.clone()),
-                Cell::from(amount).style(amount_style),
-            ])
-            .style(style)
+            ListItem::new(Text::from(vec![line1, line2]))
         })
         .collect();
 
@@ -101,30 +101,23 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
         " Transactions "
     };
 
-    let widths = [
-        Constraint::Length(14),
-        Constraint::Fill(1),
-        Constraint::Length(12),
-    ];
-
-    let table = Table::new(rows, widths)
-        .header(header)
+    let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(title)
                 .style(base_style),
         )
-        .row_highlight_style(
+        .highlight_style(
             Style::default()
                 .bg(palette.selection)
                 .fg(palette.fg)
                 .add_modifier(Modifier::BOLD),
         );
 
-    let mut table_state = TableState::default();
-    table_state.select(Some(tab.selected));
-    f.render_stateful_widget(table, area, &mut table_state);
+    let mut list_state = ListState::default();
+    list_state.select(Some(tab.selected));
+    f.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn format_date(txn: &Transaction) -> String {

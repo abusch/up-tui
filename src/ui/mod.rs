@@ -26,8 +26,8 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     .split(f.area());
 
     // Record the list area height so key handlers can use it for page scrolling.
-    // Subtract 3 for borders (2) and header row (1).
-    state.list_height = chunks[1].height.saturating_sub(3);
+    // Subtract 2 for borders, divide by 2 because each item is 2 lines tall.
+    state.list_height = chunks[1].height.saturating_sub(2) / 2;
 
     tabs::draw_tabs(f, chunks[0], state);
     transaction_list::draw_transaction_list(f, chunks[1], state);
