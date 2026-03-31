@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use ratatui::widgets::ListState;
 use ratatui_themes::{Theme, ThemePalette};
 
 use up_api::models::{Account, Transaction};
@@ -16,6 +17,7 @@ pub struct TabState {
     pub transactions: Option<Vec<Transaction>>,
     pub selected: usize,
     pub loading: bool,
+    pub list_state: ListState,
 }
 
 impl TabState {
@@ -24,6 +26,7 @@ impl TabState {
             transactions: None,
             selected: 0,
             loading: false,
+            list_state: ListState::default(),
         }
     }
 }

@@ -3,12 +3,12 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
+use ratatui::widgets::{Block, Borders, List, ListItem};
 
 use crate::app::state::AppState;
 use up_api::models::Transaction;
 
-pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
+pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
     let palette = state.palette();
     let base_style = Style::default().fg(palette.fg).bg(palette.bg);
 
@@ -95,7 +95,8 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    let title = if tab.loading {
+    let loading = tab.loading;
+    let title = if loading {
         " Transactions - Refreshing... "
     } else {
         " Transactions "
@@ -115,9 +116,11 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &AppState) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    let mut list_state = ListState::default();
-    list_state.select(Some(tab.selected));
-    f.render_stateful_widget(list, area, &mut list_state);
+    // Use the persisted ListState from TabState so that the scroll offset
+    // is preserved across renders, avoiding jumpy scrolling.
+    let tab = state.current_tab_mut().unwrap();
+    tab.list_state.select(Some(tab.selected));
+    f.render_stateful_widget(list, area, &mut tab.list_state);
 }
 
 fn format_date(txn: &Transaction) -> String {
