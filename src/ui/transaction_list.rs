@@ -1,4 +1,4 @@
-use chrono::Local;
+use jiff::tz::TimeZone;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -86,10 +86,7 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
                 Span::raw(" ".repeat(padding)),
                 Span::styled(amount, amount_style),
             ]);
-            let line2 = Line::from(Span::styled(
-                date,
-                Style::default().fg(palette.muted),
-            ));
+            let line2 = Line::from(Span::styled(date, Style::default().fg(palette.muted)));
 
             ListItem::new(Text::from(vec![line1, line2]))
         })
@@ -124,8 +121,8 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
 }
 
 fn format_date(txn: &Transaction) -> String {
-    let dt = txn.created_at.with_timezone(&Local);
-    dt.format("%d %b %H:%M").to_string()
+    let zdt = txn.created_at.to_zoned(TimeZone::system());
+    zdt.strftime("%d %b %H:%M").to_string()
 }
 
 fn format_amount(txn: &Transaction) -> String {

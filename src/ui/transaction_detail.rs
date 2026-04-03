@@ -1,4 +1,4 @@
-use chrono::Local;
+use jiff::tz::TimeZone;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -69,8 +69,8 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
         &mut lines,
         "Created",
         &txn.created_at
-            .with_timezone(&Local)
-            .format("%Y-%m-%d %H:%M:%S")
+            .to_zoned(TimeZone::system())
+            .strftime("%Y-%m-%d %H:%M:%S")
             .to_string(),
         label_style,
         value_style,
@@ -81,8 +81,8 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
             &mut lines,
             "Settled",
             &settled
-                .with_timezone(&Local)
-                .format("%Y-%m-%d %H:%M:%S")
+                .to_zoned(TimeZone::system())
+                .strftime("%Y-%m-%d %H:%M:%S")
                 .to_string(),
             label_style,
             value_style,

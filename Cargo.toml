@@ -8,7 +8,7 @@ edition = "2024"
 [workspace.dependencies]
 up-api = { path = "crates/up-api" }
 anyhow = "1"
-chrono = { version = "0.4", features = ["serde"] }
+jiff = { version = "0.2", features = ["serde"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
 dirs = "6"
 futures = "0.3.32"
@@ -28,7 +28,7 @@ edition.workspace = true
 [dependencies]
 up-api.workspace = true
 anyhow.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 crossterm.workspace = true
 dirs.workspace = true
 futures.workspace = true

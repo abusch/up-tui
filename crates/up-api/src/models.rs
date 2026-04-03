@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Deserialize;
 
 // --- JSON:API envelope types ---
@@ -69,7 +69,7 @@ pub struct AccountAttributes {
     pub account_type: String,
     pub balance: MoneyObject,
     #[serde(rename = "createdAt")]
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -96,9 +96,9 @@ pub struct TransactionAttributes {
     #[serde(rename = "cardPurchaseMethod")]
     pub card_purchase_method: Option<CardPurchaseMethod>,
     #[serde(rename = "settledAt")]
-    pub settled_at: Option<DateTime<Utc>>,
+    pub settled_at: Option<Timestamp>,
     #[serde(rename = "createdAt")]
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     #[serde(rename = "roundUp")]
     pub round_up: Option<RoundUp>,
     pub cashback: Option<Cashback>,
@@ -173,8 +173,8 @@ pub struct Transaction {
     pub amount: MoneyObject,
     pub foreign_amount: Option<MoneyObject>,
     pub card_purchase_method: Option<CardPurchaseMethod>,
-    pub settled_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
+    pub settled_at: Option<Timestamp>,
+    pub created_at: Timestamp,
     pub round_up: Option<RoundUp>,
     pub cashback: Option<Cashback>,
     pub category: Option<String>,
