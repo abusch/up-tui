@@ -9,7 +9,9 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+http-cache-reqwest.workspace = true
 jiff.workspace = true
 reqwest.workspace = true
+reqwest-middleware.workspace = true
 serde.workspace = true
 serde_json.workspace = true

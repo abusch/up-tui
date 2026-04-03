@@ -1,12 +1,14 @@
 use anyhow::Result;
+use http_cache_reqwest::{Cache, CacheMode, HttpCache, HttpCacheOptions, MokaManager};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
+use reqwest_middleware::ClientWithMiddleware;
 
 use super::models::*;
 
 const BASE_URL: &str = "https://api.up.com.au/api/v1";
 
 pub struct UpClient {
-    client: reqwest::Client,
+    client: ClientWithMiddleware,
 }
 
 impl UpClient {
@@ -19,6 +21,13 @@ impl UpClient {
         let client = reqwest::Client::builder()
             .default_headers(headers)
             .build()?;
+        let client = reqwest_middleware::ClientBuilder::new(client)
+            .with(Cache(HttpCache {
+                mode: CacheMode::Default,
+                manager: MokaManager::default(),
+                options: HttpCacheOptions::default(),
+            }))
+            .build();
         Ok(UpClient { client })
     }
 

@@ -20,6 +20,8 @@ ratatui-themes = { version = "0.2.0", features = ["serde"] }
 reqwest = { version = "0.13.2", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+http-cache-reqwest = { version = "1.0.0-alpha.5", default-features = false, features = ["manager-moka", "url-standard"] }
+reqwest-middleware = "0.5.1"
 tokio = { version = "1.50.0", default-features = false }
 toml = "1.1.2"
 
