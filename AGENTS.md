@@ -111,6 +111,10 @@ All UI modules read `state.palette()` for colors — no hardcoded colors remain.
 - `palette.selection` — selected row background
 - `palette.bg` / `palette.fg` — base background and foreground for all blocks and text
 
+## Dependencies
+
+When adding or updating dependencies in `Cargo.toml`, always specify the full version including the patch number (e.g. `"1.0.102"` not `"1"` or `"1.0"`). This applies to both workspace and package-level dependencies.
+
 ## Code Quality
 
 All code must pass `cargo clippy --workspace` with zero warnings before being considered complete. Always run clippy after making changes and fix any warnings it reports.
