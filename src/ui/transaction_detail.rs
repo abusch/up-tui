@@ -6,7 +6,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 use crate::app::state::AppState;
-use up_api::models::Transaction;
 
 pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
     let palette = state.palette();
@@ -54,7 +53,10 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
     };
     lines.push(Line::from(vec![
         Span::styled("Amount:       ", label_style),
-        Span::styled(format_amount(txn), Style::default().fg(amount_color)),
+        Span::styled(
+            txn.amount.format_display(true),
+            Style::default().fg(amount_color),
+        ),
     ]));
 
     add_field(
@@ -194,21 +196,15 @@ fn add_field(
     label_style: Style,
     value_style: Style,
 ) {
-    let padded_label = format!("{:14}", format!("{}:", label));
+    let padded_label = format!(
+        "{label}:{:>pad$}",
+        "",
+        pad = 13usize.saturating_sub(label.len())
+    );
     lines.push(Line::from(vec![
         Span::styled(padded_label, label_style),
         Span::styled(value.to_string(), value_style),
     ]));
-}
-
-fn format_amount(txn: &Transaction) -> String {
-    let cents = txn.amount.value_in_base_units;
-    let abs = (cents.unsigned_abs() as f64) / 100.0;
-    if cents >= 0 {
-        format!("+${:.2}", abs)
-    } else {
-        format!("-${:.2}", abs)
-    }
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

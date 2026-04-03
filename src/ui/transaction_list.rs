@@ -9,52 +9,56 @@ use crate::app::state::AppState;
 use up_api::models::Transaction;
 
 pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
+    // Record visible page size for Ctrl+D/Ctrl+U scrolling in the key handler.
+    // Subtract 2 for borders, divide by 2 because each transaction item is 2 lines tall.
+    state.list_height = area.height.saturating_sub(2) / 2;
+
     let palette = state.palette();
     let base_style = Style::default().fg(palette.fg).bg(palette.bg);
 
-    let tab = match state.current_tab() {
-        Some(t) => t,
+    let title;
+    let transactions = match state.current_tab() {
+        Some(tab) if tab.loading && tab.transactions.is_none() => {
+            title = " Transactions - Loading... ";
+            None
+        }
+        Some(tab) => match &tab.transactions {
+            Some(txns) if !txns.is_empty() => {
+                title = if tab.loading {
+                    " Transactions - Refreshing... "
+                } else {
+                    " Transactions "
+                };
+                Some(txns)
+            }
+            Some(_) => {
+                title = " Transactions - No transactions ";
+                None
+            }
+            None => {
+                title = " Transactions ";
+                None
+            }
+        },
+        None => {
+            title = " Transactions ";
+            None
+        }
+    };
+
+    let transactions = match transactions {
+        Some(txns) => txns,
         None => {
             let block = Block::default()
                 .borders(Borders::ALL)
-                .title(" Transactions ")
+                .title(title)
                 .style(base_style);
             f.render_widget(block, area);
             return;
         }
     };
 
-    if tab.loading && tab.transactions.is_none() {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" Transactions - Loading... ")
-            .style(base_style);
-        f.render_widget(block, area);
-        return;
-    }
-
-    let transactions = match &tab.transactions {
-        Some(t) => t,
-        None => {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .title(" Transactions ")
-                .style(base_style);
-            f.render_widget(block, area);
-            return;
-        }
-    };
-
-    if transactions.is_empty() {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" Transactions - No transactions ")
-            .style(base_style);
-        f.render_widget(block, area);
-        return;
-    }
-
-    // 2 for borders + 1 for highlight symbol ("▎")
+    // 2 for borders + 2 for highlight symbol ("▎ ")
     let inner_width = area.width.saturating_sub(4) as usize;
     let tz = TimeZone::system();
 
@@ -64,7 +68,7 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
     let mut txn_to_list_index: Vec<usize> = Vec::new();
     let mut last_date: Option<jiff::civil::Date> = None;
 
-    for (i, txn) in transactions.iter().enumerate() {
+    for txn in transactions {
         let zdt = txn.created_at.to_zoned(tz.clone());
         let date = zdt.date();
 
@@ -83,15 +87,7 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
 
         txn_to_list_index.push(items.len());
         items.push(build_transaction_item(txn, &zdt, inner_width, palette));
-        let _ = i;
     }
-
-    let loading = state.current_tab().unwrap().loading;
-    let title = if loading {
-        " Transactions - Refreshing... "
-    } else {
-        " Transactions "
-    };
 
     let list = List::new(items)
         .block(
@@ -126,7 +122,7 @@ fn build_transaction_item<'a>(
     palette: ratatui_themes::ThemePalette,
 ) -> ListItem<'a> {
     let time = zdt.strftime("%H:%M").to_string();
-    let amount = format_amount(txn);
+    let amount = txn.amount.format_display(false);
     let amount_len = amount.len();
     let max_desc_len = inner_width.saturating_sub(amount_len + 1);
 
@@ -155,14 +151,4 @@ fn build_transaction_item<'a>(
     let line2 = Line::from(Span::styled(time, Style::default().fg(palette.muted)));
 
     ListItem::new(Text::from(vec![line1, line2]))
-}
-
-fn format_amount(txn: &Transaction) -> String {
-    let cents = txn.amount.value_in_base_units;
-    let abs = (cents.unsigned_abs() as f64) / 100.0;
-    if cents >= 0 {
-        format!("+${:.2}", abs)
-    } else {
-        format!("${:.2}", abs)
-    }
 }

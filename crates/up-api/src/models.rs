@@ -81,6 +81,23 @@ pub struct MoneyObject {
     pub value_in_base_units: i64,
 }
 
+impl MoneyObject {
+    /// Format as a dollar amount. When `signed` is true, both positive and
+    /// negative values get an explicit sign (`+$1.23` / `-$1.23`). When false,
+    /// only positive values get a `+` prefix and negatives show as `$1.23`.
+    pub fn format_display(&self, signed: bool) -> String {
+        let cents = self.value_in_base_units;
+        let abs = (cents.unsigned_abs() as f64) / 100.0;
+        if cents >= 0 {
+            format!("+${abs:.2}")
+        } else if signed {
+            format!("-${abs:.2}")
+        } else {
+            format!("${abs:.2}")
+        }
+    }
+}
+
 // --- Transaction types ---
 
 #[derive(Debug, Deserialize)]
