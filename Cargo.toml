@@ -33,6 +33,10 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[[bin]]
+name = "up"
+path = "src/main.rs"
+
 [dependencies]
 up-api.workspace = true
 anyhow.workspace = true

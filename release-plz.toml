@@ -1,4 +1,8 @@
 [[package]]
+name = "up-tui"
+publish = false
+
+[[package]]
 name = "up-api"
 release = false
 publish = false
