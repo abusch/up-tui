@@ -192,7 +192,7 @@ fn fetch_transactions(
         let client = Arc::clone(client);
         let tx = tx.clone();
         tokio::spawn(async move {
-            let result = client.get_transactions(&account_id).await;
+            let result = client.get_transactions(&account_id).await.map_err(Into::into);
             let _ = tx.send(AppEvent::TransactionsLoaded { tab_index, result });
         });
     }
@@ -202,7 +202,7 @@ pub fn fetch_categories(client: &Arc<UpClient>, tx: &mpsc::UnboundedSender<AppEv
     let client = Arc::clone(client);
     let tx = tx.clone();
     tokio::spawn(async move {
-        let result = client.get_categories().await;
+        let result = client.get_categories().await.map_err(Into::into);
         let _ = tx.send(AppEvent::CategoriesLoaded(result));
     });
 }
@@ -211,7 +211,7 @@ pub fn fetch_accounts(client: &Arc<UpClient>, tx: &mpsc::UnboundedSender<AppEven
     let client = Arc::clone(client);
     let tx = tx.clone();
     tokio::spawn(async move {
-        let result = client.get_accounts().await;
+        let result = client.get_accounts().await.map_err(Into::into);
         let _ = tx.send(AppEvent::AccountsLoaded(result));
     });
 }

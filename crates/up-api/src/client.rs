@@ -1,8 +1,9 @@
-use anyhow::Result;
 use http_cache_reqwest::{Cache, CacheMode, HttpCache, HttpCacheOptions, MokaManager};
+use reqwest::Client;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
-use reqwest_middleware::ClientWithMiddleware;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 
+use super::error::Result;
 use super::models::*;
 
 const BASE_URL: &str = "https://api.up.com.au/api/v1";
@@ -18,10 +19,8 @@ impl UpClient {
             AUTHORIZATION,
             HeaderValue::from_str(&format!("Bearer {}", token))?,
         );
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()?;
-        let client = reqwest_middleware::ClientBuilder::new(client)
+        let client = Client::builder().default_headers(headers).build()?;
+        let client = ClientBuilder::new(client)
             .with(Cache(HttpCache {
                 mode: CacheMode::Default,
                 manager: MokaManager::default(),

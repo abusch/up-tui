@@ -4,18 +4,21 @@ use serde::Deserialize;
 // --- JSON:API envelope types ---
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JsonApiResponse<T> {
     pub data: T,
     pub links: Option<PaginationLinks>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PaginationLinks {
     pub prev: Option<String>,
     pub next: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Resource<A, R = serde_json::Value> {
     pub id: String,
     #[serde(rename = "type")]
@@ -28,25 +31,28 @@ pub struct Resource<A, R = serde_json::Value> {
 // --- JSON:API relationship types ---
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RelationshipData {
     pub id: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToOneRelationship {
     pub data: Option<RelationshipData>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToManyRelationship {
     pub data: Vec<RelationshipData>,
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransactionRelationships {
     #[serde(default)]
     pub category: Option<ToOneRelationship>,
-    #[serde(default, rename = "parentCategory")]
     pub parent_category: Option<ToOneRelationship>,
     #[serde(default)]
     pub tags: Option<ToManyRelationship>,
@@ -55,6 +61,7 @@ pub struct TransactionRelationships {
 // --- Category types ---
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CategoryAttributes {
     pub name: String,
 }
@@ -62,22 +69,19 @@ pub struct CategoryAttributes {
 // --- Account types ---
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccountAttributes {
-    #[serde(rename = "displayName")]
     pub display_name: String,
-    #[serde(rename = "accountType")]
     pub account_type: String,
     pub balance: MoneyObject,
-    #[serde(rename = "createdAt")]
     pub created_at: Timestamp,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MoneyObject {
-    #[serde(rename = "currencyCode")]
     pub currency_code: String,
     pub value: String,
-    #[serde(rename = "valueInBaseUnits")]
     pub value_in_base_units: i64,
 }
 
@@ -101,45 +105,40 @@ impl MoneyObject {
 // --- Transaction types ---
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransactionAttributes {
     pub status: TransactionStatus,
-    #[serde(rename = "rawText")]
     pub raw_text: Option<String>,
     pub description: String,
     pub message: Option<String>,
     pub amount: MoneyObject,
-    #[serde(rename = "foreignAmount")]
     pub foreign_amount: Option<MoneyObject>,
-    #[serde(rename = "cardPurchaseMethod")]
     pub card_purchase_method: Option<CardPurchaseMethod>,
-    #[serde(rename = "settledAt")]
     pub settled_at: Option<Timestamp>,
-    #[serde(rename = "createdAt")]
     pub created_at: Timestamp,
-    #[serde(rename = "roundUp")]
     pub round_up: Option<RoundUp>,
     pub cashback: Option<Cashback>,
-    #[serde(rename = "holdInfo")]
     pub hold_info: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RoundUp {
     pub amount: MoneyObject,
-    #[serde(rename = "boostPortion")]
     pub boost_portion: Option<MoneyObject>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Cashback {
     pub description: String,
     pub amount: MoneyObject,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CardPurchaseMethod {
     pub method: String,
-    #[serde(rename = "cardNumberSuffix")]
     pub card_number_suffix: Option<String>,
 }
 
@@ -153,8 +152,8 @@ pub enum TransactionStatus {
 impl std::fmt::Display for TransactionStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TransactionStatus::Held => write!(f, "HELD"),
-            TransactionStatus::Settled => write!(f, "STTL"),
+            TransactionStatus::Held => write!(f, "Held"),
+            TransactionStatus::Settled => write!(f, "Settled"),
         }
     }
 }
