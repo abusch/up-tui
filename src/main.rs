@@ -5,7 +5,7 @@ mod ui;
 use std::sync::Arc;
 
 use anyhow::Result;
-use ratatui::DefaultTerminal;
+use ratatui::{DefaultTerminal, init, restore};
 use tokio::sync::mpsc;
 use up_api::client::UpClient;
 
@@ -13,7 +13,8 @@ use app::event::{AppEvent, spawn_event_reader};
 use app::handler::{fetch_accounts, fetch_categories, handle_event};
 use app::state::AppState;
 
-fn main() -> Result<()> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<()> {
     // Load config before entering TUI mode
     let cfg = match config::load_config() {
         Ok(c) => c,
@@ -26,10 +27,11 @@ fn main() -> Result<()> {
     let client = Arc::new(UpClient::new(&cfg.api_token)?);
     let state = AppState::new(cfg);
 
-    let rt = tokio::runtime::Runtime::new()?;
-    ratatui::run(|terminal| rt.block_on(run_app(terminal, client, state)))?;
+    let mut terminal = init();
+    let result = run_app(&mut terminal, client, state).await;
+    restore();
 
-    Ok(())
+    result
 }
 
 async fn run_app(
