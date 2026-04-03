@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 use crate::app::event::AppEvent;
 use crate::app::state::{AppMode, AppState};
 use up_api::client::UpClient;
+use up_api::models::PaginationOptions;
 
 pub fn handle_event(
     state: &mut AppState,
@@ -192,7 +193,11 @@ fn fetch_transactions(
         let client = Arc::clone(client);
         let tx = tx.clone();
         tokio::spawn(async move {
-            let result = client.get_transactions(&account_id).await.map_err(Into::into);
+            let result = client
+                .get_transactions(&account_id, PaginationOptions::default())
+                .await
+                .map(|page| page.data)
+                .map_err(Into::into);
             let _ = tx.send(AppEvent::TransactionsLoaded { tab_index, result });
         });
     }
@@ -211,7 +216,11 @@ pub fn fetch_accounts(client: &Arc<UpClient>, tx: &mpsc::UnboundedSender<AppEven
     let client = Arc::clone(client);
     let tx = tx.clone();
     tokio::spawn(async move {
-        let result = client.get_accounts().await.map_err(Into::into);
+        let result = client
+            .get_accounts(PaginationOptions::default())
+            .await
+            .map(|page| page.data)
+            .map_err(Into::into);
         let _ = tx.send(AppEvent::AccountsLoaded(result));
     });
 }

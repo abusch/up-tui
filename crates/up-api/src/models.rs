@@ -158,6 +158,39 @@ impl std::fmt::Display for TransactionStatus {
     }
 }
 
+// --- Pagination types ---
+
+#[derive(Debug)]
+pub struct PaginationOptions {
+    pub page_size: u32,
+    pub next_url: Option<String>,
+}
+
+impl Default for PaginationOptions {
+    fn default() -> Self {
+        Self {
+            page_size: 50,
+            next_url: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PaginatedResponse<T> {
+    pub data: Vec<T>,
+    pub next_page_url: Option<String>,
+}
+
+impl<T> PaginatedResponse<T> {
+    /// Returns `PaginationOptions` to fetch the next page, or `None` if there is no next page.
+    pub fn next_page(&self) -> Option<PaginationOptions> {
+        self.next_page_url.as_ref().map(|url| PaginationOptions {
+            next_url: Some(url.clone()),
+            ..Default::default()
+        })
+    }
+}
+
 // --- Domain structs (flattened from Resource) ---
 
 #[derive(Debug)]
