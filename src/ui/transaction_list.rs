@@ -54,45 +54,39 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
         return;
     }
 
-    let inner_width = area.width.saturating_sub(2) as usize;
+    // 2 for borders + 1 for highlight symbol ("▎")
+    let inner_width = area.width.saturating_sub(4) as usize;
+    let tz = TimeZone::system();
 
-    let items: Vec<ListItem> = transactions
-        .iter()
-        .map(|txn| {
-            let date = format_date(txn);
-            let amount = format_amount(txn);
-            let amount_len = amount.len();
-            let max_desc_len = inner_width.saturating_sub(amount_len + 1);
+    // Build list items with day separators. Track which list index corresponds
+    // to each transaction so we can map `tab.selected` to the right row.
+    let mut items: Vec<ListItem> = Vec::new();
+    let mut txn_to_list_index: Vec<usize> = Vec::new();
+    let mut last_date: Option<jiff::civil::Date> = None;
 
-            let desc = &txn.description;
-            let truncated_desc: String = if desc.chars().count() > max_desc_len {
-                let mut s: String = desc.chars().take(max_desc_len.saturating_sub(1)).collect();
-                s.push('…');
-                s
-            } else {
-                desc.clone()
-            };
+    for (i, txn) in transactions.iter().enumerate() {
+        let zdt = txn.created_at.to_zoned(tz.clone());
+        let date = zdt.date();
 
-            let padding = inner_width.saturating_sub(truncated_desc.len() + amount_len);
+        if last_date != Some(date) {
+            last_date = Some(date);
+            let label = zdt.strftime("%a %-d %b").to_string().to_uppercase();
+            let padded = format!("{:<width$}", label, width = inner_width);
+            items.push(ListItem::new(Line::from(Span::styled(
+                padded,
+                Style::default()
+                    .fg(palette.bg)
+                    .bg(palette.muted)
+                    .add_modifier(Modifier::BOLD),
+            ))));
+        }
 
-            let amount_style = if txn.amount.value_in_base_units >= 0 {
-                Style::default().fg(palette.success)
-            } else {
-                Style::default().fg(palette.fg)
-            };
+        txn_to_list_index.push(items.len());
+        items.push(build_transaction_item(txn, &zdt, inner_width, palette));
+        let _ = i;
+    }
 
-            let line1 = Line::from(vec![
-                Span::raw(truncated_desc),
-                Span::raw(" ".repeat(padding)),
-                Span::styled(amount, amount_style),
-            ]);
-            let line2 = Line::from(Span::styled(date, Style::default().fg(palette.muted)));
-
-            ListItem::new(Text::from(vec![line1, line2]))
-        })
-        .collect();
-
-    let loading = tab.loading;
+    let loading = state.current_tab().unwrap().loading;
     let title = if loading {
         " Transactions - Refreshing... "
     } else {
@@ -111,18 +105,56 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
                 .bg(palette.selection)
                 .fg(palette.fg)
                 .add_modifier(Modifier::BOLD),
-        );
+        )
+        .highlight_symbol(Line::from(Span::styled(
+            "▎ ",
+            Style::default().fg(palette.accent),
+        )))
+        .highlight_spacing(ratatui::widgets::HighlightSpacing::Always)
+        .repeat_highlight_symbol(true);
 
-    // Use the persisted ListState from TabState so that the scroll offset
-    // is preserved across renders, avoiding jumpy scrolling.
     let tab = state.current_tab_mut().unwrap();
-    tab.list_state.select(Some(tab.selected));
+    let list_index = txn_to_list_index.get(tab.selected).copied().unwrap_or(0);
+    tab.list_state.select(Some(list_index));
     f.render_stateful_widget(list, area, &mut tab.list_state);
 }
 
-fn format_date(txn: &Transaction) -> String {
-    let zdt = txn.created_at.to_zoned(TimeZone::system());
-    zdt.strftime("%d %b %H:%M").to_string()
+fn build_transaction_item<'a>(
+    txn: &Transaction,
+    zdt: &jiff::Zoned,
+    inner_width: usize,
+    palette: ratatui_themes::ThemePalette,
+) -> ListItem<'a> {
+    let time = zdt.strftime("%H:%M").to_string();
+    let amount = format_amount(txn);
+    let amount_len = amount.len();
+    let max_desc_len = inner_width.saturating_sub(amount_len + 1);
+
+    let desc = &txn.description;
+    let truncated_desc: String = if desc.chars().count() > max_desc_len {
+        let mut s: String = desc.chars().take(max_desc_len.saturating_sub(1)).collect();
+        s.push('…');
+        s
+    } else {
+        desc.clone()
+    };
+
+    let padding = inner_width.saturating_sub(truncated_desc.len() + amount_len);
+
+    let amount_style = if txn.amount.value_in_base_units >= 0 {
+        Style::default().fg(palette.success)
+    } else {
+        Style::default().fg(palette.fg)
+    };
+
+    let line1 = Line::from(vec![
+        Span::raw(truncated_desc),
+        Span::raw(" ".repeat(padding)),
+        Span::styled(amount, amount_style),
+    ]);
+    let line2 = Line::from(Span::styled(time, Style::default().fg(palette.muted)));
+
+    ListItem::new(Text::from(vec![line1, line2]))
 }
 
 fn format_amount(txn: &Transaction) -> String {
