@@ -92,6 +92,7 @@ src/
 | `Shift+Tab` / `h` | Normal | Previous tab            |
 | `j` / `↓`       | Normal | Next transaction          |
 | `k` / `↑`       | Normal | Previous transaction      |
+| `[` / `]`       | Normal | Previous / next day       |
 | `g` / `G`       | Normal | Jump to top / bottom      |
 | `Enter`          | Normal | Open detail overlay       |
 | `r`              | Normal | Refresh current tab       |

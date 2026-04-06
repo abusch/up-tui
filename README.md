@@ -47,6 +47,7 @@ A terminal UI for [Up Banking](https://up.com.au/) that lets you browse your acc
 | `Shift+Tab` / `h`  | Previous account     |
 | `j` / `Down`       | Next transaction     |
 | `k` / `Up`         | Previous transaction |
+| `[` / `]`          | Previous / next day  |
 | `g` / `G`          | Jump to top / bottom |
 | `Enter`            | View transaction detail |
 | `Esc` / `q`        | Close detail / quit  |

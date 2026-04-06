@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use jiff::tz::TimeZone;
 use tokio::sync::mpsc;
 
 use crate::app::event::AppEvent;
@@ -130,6 +131,44 @@ fn handle_normal_key(
                 && !txns.is_empty()
             {
                 tab.selected = txns.len() - 1;
+            }
+        }
+        KeyCode::Char('[') => {
+            let tz = TimeZone::system();
+            if let Some(tab) = state.current_tab_mut()
+                && let Some(ref txns) = tab.transactions
+                && !txns.is_empty()
+            {
+                let current_date = txns[tab.selected].created_at.to_zoned(tz.clone()).date();
+                // Find the first transaction of the previous day
+                if let Some(prev) = txns[..tab.selected]
+                    .iter()
+                    .rposition(|t| t.created_at.to_zoned(tz.clone()).date() != current_date)
+                {
+                    // prev is in the previous day; find the first transaction of that day
+                    let prev_date = txns[prev].created_at.to_zoned(tz.clone()).date();
+                    let first = txns[..=prev]
+                        .iter()
+                        .position(|t| t.created_at.to_zoned(tz.clone()).date() == prev_date)
+                        .unwrap_or(prev);
+                    tab.selected = first;
+                }
+            }
+        }
+        KeyCode::Char(']') => {
+            let tz = TimeZone::system();
+            if let Some(tab) = state.current_tab_mut()
+                && let Some(ref txns) = tab.transactions
+                && !txns.is_empty()
+            {
+                let current_date = txns[tab.selected].created_at.to_zoned(tz.clone()).date();
+                // Find the first transaction of the next day
+                if let Some(pos) = txns[tab.selected + 1..]
+                    .iter()
+                    .position(|t| t.created_at.to_zoned(tz.clone()).date() != current_date)
+                {
+                    tab.selected = tab.selected + 1 + pos;
+                }
             }
         }
         KeyCode::Enter => {

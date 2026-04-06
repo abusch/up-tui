@@ -24,6 +24,8 @@ pub fn draw_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
             Span::styled(": prev  ", Style::default().fg(palette.fg)),
             Span::styled("j/k", Style::default().fg(palette.accent)),
             Span::styled(": navigate  ", Style::default().fg(palette.fg)),
+            Span::styled("[/]", Style::default().fg(palette.accent)),
+            Span::styled(": prev/next day  ", Style::default().fg(palette.fg)),
             Span::styled("Enter", Style::default().fg(palette.accent)),
             Span::styled(": detail  ", Style::default().fg(palette.fg)),
             Span::styled("r", Style::default().fg(palette.accent)),
