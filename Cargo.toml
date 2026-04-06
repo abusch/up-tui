@@ -2,7 +2,7 @@
 name = "up-tui"
 description = "A terminal UI for viewing Up Banking accounts and transactions"
 keywords = ["tui", "banking", "up-bank", "ratatui", "terminal"]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 authors = ["Antoine Büsch <antoine.busch@gmail.com>"]
 license = "MIT OR Apache-2.0"
