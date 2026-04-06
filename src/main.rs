@@ -1,4 +1,5 @@
 mod app;
+mod client;
 mod config;
 mod ui;
 
@@ -7,7 +8,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use ratatui::{DefaultTerminal, init, restore};
 use tokio::sync::mpsc;
-use up_api::client::UpClient;
+
+use client::UpClient;
 
 use app::event::{AppEvent, spawn_event_reader};
 use app::handler::{fetch_accounts, fetch_categories, handle_event};

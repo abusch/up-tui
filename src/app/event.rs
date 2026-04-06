@@ -3,7 +3,7 @@ use crossterm::event::{Event, EventStream, KeyEvent};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
-use up_api::models::{Account, Transaction};
+use crate::client::models::{Account, Transaction};
 
 pub enum AppEvent {
     Key(KeyEvent),

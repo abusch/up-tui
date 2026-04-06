@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use jiff::Timestamp;
 use serde::Deserialize;
 

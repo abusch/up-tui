@@ -1,56 +1,33 @@
-[workspace]
-members = ["crates/up-api"]
-
-[workspace.package]
-edition = "2024"
-authors = ["Antoine Büsch <antoine.busch@gmail.com>"]
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/abusch/up-tui"
-
-[workspace.dependencies]
-up-api = { path = "crates/up-api", version = "0.2.0" }
-anyhow = "1.0.102"
-jiff = { version = "0.2.23", features = ["serde"] }
-crossterm = { version = "0.29.0", features = ["event-stream"] }
-dirs = "6.0.0"
-futures = "0.3.32"
-ratatui = "0.30.0"
-ratatui-themes = { version = "0.2.0", features = ["serde"] }
-reqwest = { version = "0.13.2", features = ["json"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-http-cache-reqwest = { version = "1.0.0-alpha.5", default-features = false, features = [
-  "manager-moka",
-  "url-standard",
-] }
-reqwest-middleware = "0.5.1"
-thiserror = "2.0.18"
-tokio = { version = "1.50.0", default-features = false }
-toml = "1.1.2"
-
 [package]
 name = "up-tui"
 description = "A terminal UI for viewing Up Banking accounts and transactions"
 keywords = ["tui", "banking", "up-bank", "ratatui", "terminal"]
 version = "0.2.0"
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
+edition = "2024"
+authors = ["Antoine Büsch <antoine.busch@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/abusch/up-tui"
 
 [[bin]]
 name = "up"
 path = "src/main.rs"
 
 [dependencies]
-up-api.workspace = true
-anyhow.workspace = true
-jiff.workspace = true
-crossterm.workspace = true
-dirs.workspace = true
-futures.workspace = true
-ratatui.workspace = true
-ratatui-themes.workspace = true
-serde.workspace = true
-tokio = { workspace = true, features = ["net", "rt", "macros"] }
-toml.workspace = true
+anyhow = "1.0.102"
+jiff = { version = "0.2.23", features = ["serde"] }
+crossterm = { version = "0.29.0", features = ["event-stream"] }
+dirs = "6.0.0"
+futures = "0.3.32"
+http-cache-reqwest = { version = "1.0.0-alpha.5", default-features = false, features = [
+  "manager-moka",
+  "url-standard",
+] }
+ratatui = "0.30.0"
+ratatui-themes = { version = "0.2.0", features = ["serde"] }
+reqwest = { version = "0.13.2", features = ["json"] }
+reqwest-middleware = "0.5.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+tokio = { version = "1.50.0", default-features = false, features = ["net", "rt", "macros"] }
+toml = "1.1.2"

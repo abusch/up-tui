@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ratatui::widgets::ListState;
 use ratatui_themes::{Theme, ThemePalette};
 
-use up_api::models::{Account, Transaction};
+use crate::client::models::{Account, Transaction};
 
 use crate::config::Config;
 

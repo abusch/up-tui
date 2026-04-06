@@ -5,8 +5,8 @@ use tokio::sync::mpsc;
 
 use crate::app::event::AppEvent;
 use crate::app::state::{AppMode, AppState};
-use up_api::client::UpClient;
-use up_api::models::PaginationOptions;
+use crate::client::UpClient;
+use crate::client::models::PaginationOptions;
 
 pub fn handle_event(
     state: &mut AppState,

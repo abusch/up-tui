@@ -55,9 +55,9 @@ src/
   main.rs              Entry point, runtime setup, main loop
   config.rs            Load and validate ~/.config/up-tui/config.toml
 
-  api/
-    mod.rs             Re-exports
-    client.rs          UpClient with Bearer auth, account/transaction/category endpoints
+  client/
+    mod.rs             UpClient with Bearer auth, account/transaction/category endpoints
+    error.rs           Error enum and Result type alias
     models.rs          JSON:API envelope types, relationship types, domain structs
 
   app/

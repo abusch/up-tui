@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, List, ListItem};
 
 use crate::app::state::AppState;
-use up_api::models::Transaction;
+use crate::client::models::Transaction;
 
 pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
     // Record visible page size for Ctrl+D/Ctrl+U scrolling in the key handler.
