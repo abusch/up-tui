@@ -34,7 +34,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package
-        run: tar czf up-tui-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release up-tui
+        run: tar czf up-tui-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release up
 
       - name: Upload
         uses: softprops/action-gh-release@v2
