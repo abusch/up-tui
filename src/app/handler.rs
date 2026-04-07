@@ -5,7 +5,7 @@ use jiff::tz::TimeZone;
 use tokio::sync::mpsc;
 
 use crate::app::event::AppEvent;
-use crate::app::state::{AppMode, AppState};
+use crate::app::state::AppState;
 use crate::client::UpClient;
 use crate::client::models::PaginationOptions;
 
@@ -60,10 +60,7 @@ fn handle_key(
     client: &Arc<UpClient>,
     tx: &mpsc::UnboundedSender<AppEvent>,
 ) {
-    match state.mode {
-        AppMode::Normal => handle_normal_key(state, key, client, tx),
-        AppMode::Detail => handle_detail_key(state, key),
-    }
+    handle_normal_key(state, key, client, tx);
 }
 
 fn handle_normal_key(
@@ -171,13 +168,9 @@ fn handle_normal_key(
                 }
             }
         }
-        KeyCode::Enter => {
-            if let Some(tab) = state.current_tab()
-                && let Some(ref txns) = tab.transactions
-                && !txns.is_empty()
-            {
-                state.mode = AppMode::Detail;
-            }
+        KeyCode::Enter => {}
+        KeyCode::Char('o') => {
+            state.show_detail = !state.show_detail;
         }
         KeyCode::Char('r') => {
             let idx = state.active_tab;
@@ -190,15 +183,6 @@ fn handle_normal_key(
         KeyCode::Char('T') => {
             state.prev_theme();
             state.set_status(format!("Theme: {}", state.theme.name.display_name()), false);
-        }
-        _ => {}
-    }
-}
-
-fn handle_detail_key(state: &mut AppState, key: KeyEvent) {
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('q') => {
-            state.mode = AppMode::Normal;
         }
         _ => {}
     }

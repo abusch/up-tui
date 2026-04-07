@@ -18,21 +18,21 @@ pub fn draw_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
         vec![Span::styled(msg.clone(), Style::default().fg(color))]
     } else {
         vec![
-            Span::styled("Tab/l", Style::default().fg(palette.accent)),
+            Span::styled("Tab/l", Style::default().fg(palette.info)),
             Span::styled(": next  ", Style::default().fg(palette.fg)),
-            Span::styled("S-Tab/h", Style::default().fg(palette.accent)),
+            Span::styled("S-Tab/h", Style::default().fg(palette.info)),
             Span::styled(": prev  ", Style::default().fg(palette.fg)),
-            Span::styled("j/k", Style::default().fg(palette.accent)),
+            Span::styled("j/k", Style::default().fg(palette.info)),
             Span::styled(": navigate  ", Style::default().fg(palette.fg)),
-            Span::styled("[/]", Style::default().fg(palette.accent)),
+            Span::styled("[/]", Style::default().fg(palette.info)),
             Span::styled(": prev/next day  ", Style::default().fg(palette.fg)),
-            Span::styled("Enter", Style::default().fg(palette.accent)),
+            Span::styled("o", Style::default().fg(palette.info)),
             Span::styled(": detail  ", Style::default().fg(palette.fg)),
-            Span::styled("r", Style::default().fg(palette.accent)),
+            Span::styled("r", Style::default().fg(palette.info)),
             Span::styled(": refresh  ", Style::default().fg(palette.fg)),
-            Span::styled("t/T", Style::default().fg(palette.accent)),
+            Span::styled("t/T", Style::default().fg(palette.info)),
             Span::styled(": theme  ", Style::default().fg(palette.fg)),
-            Span::styled("q", Style::default().fg(palette.accent)),
+            Span::styled("q", Style::default().fg(palette.info)),
             Span::styled(": quit", Style::default().fg(palette.fg)),
         ]
     };

@@ -8,6 +8,7 @@ use crate::client::models::{Account, Transaction};
 use crate::config::Config;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum AppMode {
     Normal,
     Detail,
@@ -35,6 +36,7 @@ pub struct AppState {
     pub accounts: Vec<Account>,
     pub tabs: Vec<TabState>,
     pub active_tab: usize,
+    #[allow(dead_code)]
     pub mode: AppMode,
     pub status_message: Option<String>,
     pub status_is_error: bool,
@@ -43,6 +45,8 @@ pub struct AppState {
     pub theme: Theme,
     #[allow(dead_code)]
     pub config: Config,
+    /// Whether the detail pane is visible.
+    pub show_detail: bool,
     /// Height of the transaction list area (in rows), updated during rendering.
     pub list_height: u16,
 }
@@ -60,6 +64,7 @@ impl AppState {
             categories: HashMap::new(),
             theme: Theme::new(config.theme),
             config,
+            show_detail: false,
             list_height: 0,
         }
     }

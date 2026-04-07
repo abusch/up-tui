@@ -1,31 +1,52 @@
 use jiff::tz::TimeZone;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Flex, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
 
 use crate::app::state::AppState;
 
-pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
+pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
     let palette = state.palette();
+    let base_style = Style::default().fg(palette.fg).bg(palette.bg);
 
     let tab = match state.current_tab() {
         Some(t) => t,
-        None => return,
+        None => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(" Detail ")
+                .style(base_style);
+            f.render_widget(block, area);
+            return;
+        }
     };
 
     let txn = match &tab.transactions {
         Some(txns) => match txns.get(tab.selected) {
             Some(t) => t,
-            None => return,
+            None => {
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(" Detail ")
+                    .style(base_style);
+                f.render_widget(block, area);
+                return;
+            }
         },
-        None => return,
+        None => {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(" Detail ")
+                .style(base_style);
+            f.render_widget(block, area);
+            return;
+        }
     };
-
-    let area = centered_rect(60, 70, f.area());
-
-    f.render_widget(Clear, area);
 
     let label_style = Style::default()
         .fg(palette.secondary)
@@ -171,18 +192,13 @@ pub fn draw_detail_overlay(f: &mut Frame, state: &AppState) {
         );
     }
 
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "Press Esc or q to close",
-        Style::default().fg(palette.muted),
-    )));
-
     let paragraph = Paragraph::new(lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Transaction Detail ")
-                .style(Style::default().fg(palette.fg).bg(palette.bg)),
+                .border_type(BorderType::Rounded)
+                .title(" Detail ")
+                .style(base_style),
         )
         .wrap(Wrap { trim: false });
 
@@ -205,14 +221,4 @@ fn add_field(
         Span::styled(padded_label, label_style),
         Span::styled(value.to_string(), value_style),
     ]));
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let [area] = Layout::vertical([Constraint::Percentage(percent_y)])
-        .flex(Flex::Center)
-        .areas(r);
-    let [area] = Layout::horizontal([Constraint::Percentage(percent_x)])
-        .flex(Flex::Center)
-        .areas(area);
-    area
 }

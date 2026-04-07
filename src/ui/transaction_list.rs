@@ -3,7 +3,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, List, ListItem};
+use ratatui::widgets::{Block, BorderType, Borders, List, ListItem};
 
 use crate::app::state::AppState;
 use crate::client::models::Transaction;
@@ -93,6 +93,7 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title(title)
                 .style(base_style),
         )
