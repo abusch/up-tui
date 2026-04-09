@@ -1,9 +1,11 @@
 use jiff::tz::TimeZone;
-use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+};
 
 use crate::app::state::AppState;
 
@@ -70,12 +72,12 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
     let amount_color = if txn.amount.value_in_base_units >= 0 {
         palette.success
     } else {
-        palette.error
+        palette.fg
     };
     lines.push(Line::from(vec![
         Span::styled("Amount:       ", label_style),
         Span::styled(
-            txn.amount.format_display(true),
+            txn.amount.format_display(),
             Style::default().fg(amount_color),
         ),
     ]));
@@ -138,7 +140,7 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
         add_field(
             &mut lines,
             "Hold Amount",
-            &hold.amount.format_display(true),
+            &hold.amount.format_display(),
             label_style,
             value_style,
         );

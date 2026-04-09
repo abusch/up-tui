@@ -29,11 +29,8 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
 
     if state.show_detail {
         // Split main content horizontally: transaction list (left) + detail pane (right)
-        let content = Layout::horizontal([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .split(chunks[1]);
+        let content =
+            Layout::horizontal([Constraint::Fill(1), Constraint::Min(25)]).split(chunks[1]);
 
         transaction_list::draw_transaction_list(f, content[0], state);
         transaction_detail::draw_detail_pane(f, content[1], state);

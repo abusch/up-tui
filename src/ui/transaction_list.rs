@@ -123,7 +123,7 @@ fn build_transaction_item<'a>(
     palette: ratatui_themes::ThemePalette,
 ) -> ListItem<'a> {
     let time = zdt.strftime("%H:%M").to_string();
-    let amount = txn.amount.format_display(false);
+    let amount = txn.amount.format_display();
     let amount_len = amount.len();
     let max_desc_len = inner_width.saturating_sub(amount_len + 1);
 
