@@ -88,6 +88,10 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
         value_style,
     );
 
+    if let Some(ref txn_type) = txn.transaction_type {
+        add_field(&mut lines, "Type", txn_type, label_style, value_style);
+    }
+
     add_field(
         &mut lines,
         "Created",
@@ -116,6 +120,10 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
         add_field(&mut lines, "Message", msg, label_style, value_style);
     }
 
+    if let Some(ref note) = txn.note {
+        add_field(&mut lines, "Note", &note.text, label_style, value_style);
+    }
+
     if let Some(ref foreign) = txn.foreign_amount {
         add_field(
             &mut lines,
@@ -124,6 +132,25 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
             label_style,
             value_style,
         );
+    }
+
+    if let Some(ref hold) = txn.hold_info {
+        add_field(
+            &mut lines,
+            "Hold Amount",
+            &hold.amount.format_display(true),
+            label_style,
+            value_style,
+        );
+        if let Some(ref foreign) = hold.foreign_amount {
+            add_field(
+                &mut lines,
+                "Hold Foreign",
+                &format!("{} {}", foreign.value, foreign.currency_code),
+                label_style,
+                value_style,
+            );
+        }
     }
 
     if let Some(ref round_up) = txn.round_up {
@@ -161,6 +188,16 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
             &mut lines,
             "Card Method",
             &format!("{} (****{})", card.method, suffix),
+            label_style,
+            value_style,
+        );
+    }
+
+    if let Some(ref customer) = txn.performing_customer {
+        add_field(
+            &mut lines,
+            "Customer",
+            &customer.display_name,
             label_style,
             value_style,
         );

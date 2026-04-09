@@ -120,7 +120,10 @@ pub struct TransactionAttributes {
     pub created_at: Timestamp,
     pub round_up: Option<RoundUp>,
     pub cashback: Option<Cashback>,
-    pub hold_info: Option<serde_json::Value>,
+    pub hold_info: Option<HoldInfo>,
+    pub transaction_type: Option<String>,
+    pub note: Option<Note>,
+    pub performing_customer: Option<Customer>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -142,6 +145,25 @@ pub struct Cashback {
 pub struct CardPurchaseMethod {
     pub method: String,
     pub card_number_suffix: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoldInfo {
+    pub amount: MoneyObject,
+    pub foreign_amount: Option<MoneyObject>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Note {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Customer {
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -223,11 +245,15 @@ pub struct Transaction {
     pub message: Option<String>,
     pub amount: MoneyObject,
     pub foreign_amount: Option<MoneyObject>,
+    pub hold_info: Option<HoldInfo>,
     pub card_purchase_method: Option<CardPurchaseMethod>,
     pub settled_at: Option<Timestamp>,
     pub created_at: Timestamp,
     pub round_up: Option<RoundUp>,
     pub cashback: Option<Cashback>,
+    pub transaction_type: Option<String>,
+    pub note: Option<Note>,
+    pub performing_customer: Option<Customer>,
     pub category: Option<String>,
     pub parent_category: Option<String>,
     pub tags: Vec<String>,
@@ -259,11 +285,15 @@ impl From<Resource<TransactionAttributes, TransactionRelationships>> for Transac
             message: r.attributes.message,
             amount: r.attributes.amount,
             foreign_amount: r.attributes.foreign_amount,
+            hold_info: r.attributes.hold_info,
             card_purchase_method: r.attributes.card_purchase_method,
             settled_at: r.attributes.settled_at,
             created_at: r.attributes.created_at,
             round_up: r.attributes.round_up,
             cashback: r.attributes.cashback,
+            transaction_type: r.attributes.transaction_type,
+            note: r.attributes.note,
+            performing_customer: r.attributes.performing_customer,
             category,
             parent_category,
             tags,
