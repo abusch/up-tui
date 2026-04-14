@@ -1,14 +1,11 @@
 use jiff::tz::TimeZone;
-use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span, Text};
+use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, List, ListItem};
 
 use crate::app::state::AppState;
 use crate::client::models::Transaction;
 
-pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
+pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState) {
     // Record visible page size for Ctrl+D/Ctrl+U scrolling in the key handler.
     // Subtract 2 for borders, divide by 2 because each transaction item is 2 lines tall.
     state.list_height = area.height.saturating_sub(2) / 2;
@@ -53,7 +50,7 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
                 .borders(Borders::ALL)
                 .title(title)
                 .style(base_style);
-            f.render_widget(block, area);
+            block.render(area, buf);
             return;
         }
     };
@@ -113,7 +110,7 @@ pub fn draw_transaction_list(f: &mut Frame, area: Rect, state: &mut AppState) {
     let tab = state.current_tab_mut().unwrap();
     let list_index = txn_to_list_index.get(tab.selected).copied().unwrap_or(0);
     tab.list_state.select(Some(list_index));
-    f.render_stateful_widget(list, area, &mut tab.list_state);
+    StatefulWidget::render(list, area, buf, &mut tab.list_state);
 }
 
 fn build_transaction_item<'a>(

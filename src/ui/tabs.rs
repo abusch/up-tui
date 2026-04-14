@@ -1,12 +1,9 @@
-use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::prelude::*;
 use ratatui::widgets::Tabs;
 
 use crate::app::state::AppState;
 
-pub fn draw_tabs(f: &mut Frame, area: Rect, state: &AppState) {
+pub fn draw_tabs(buf: &mut Buffer, area: Rect, state: &AppState) {
     let palette = state.palette();
 
     let titles: Vec<Line> = state
@@ -28,7 +25,7 @@ pub fn draw_tabs(f: &mut Frame, area: Rect, state: &AppState) {
         )
         .divider(Span::raw("│"));
 
-    f.render_widget(tabs, area);
+    tabs.render(area, buf);
 }
 
 fn format_balance(value: &str) -> String {

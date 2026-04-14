@@ -38,8 +38,6 @@ pub struct AppState {
     pub active_tab: usize,
     #[allow(dead_code)]
     pub mode: AppMode,
-    pub status_message: Option<String>,
-    pub status_is_error: bool,
     pub should_quit: bool,
     pub categories: HashMap<String, String>,
     pub theme: Theme,
@@ -58,8 +56,6 @@ impl AppState {
             tabs: Vec::new(),
             active_tab: 0,
             mode: AppMode::Normal,
-            status_message: None,
-            status_is_error: false,
             should_quit: false,
             categories: HashMap::new(),
             theme: Theme::new(config.theme),
@@ -109,16 +105,6 @@ impl AppState {
                 self.active_tab - 1
             };
         }
-    }
-
-    pub fn set_status(&mut self, msg: String, is_error: bool) {
-        self.status_message = Some(msg);
-        self.status_is_error = is_error;
-    }
-
-    pub fn clear_status(&mut self) {
-        self.status_message = None;
-        self.status_is_error = false;
     }
 
     pub fn category_name<'a>(&'a self, id: &'a str) -> &'a str {

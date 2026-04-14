@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jiff::tz::TimeZone;
-use ratatui::DefaultTerminal;
+use ratatui::prelude::*;
+use ratatui::{DefaultTerminal, layout::Rect};
+use ratatui_toaster::{ToastEngine, ToastEngineBuilder, ToastMessage, ToastPosition, ToastType};
 use tokio::sync::mpsc;
 
 use crate::{
@@ -12,7 +14,6 @@ use crate::{
     },
     client::{UpClient, models::PaginationOptions},
     config::Config,
-    ui,
 };
 
 pub mod event;
@@ -20,25 +21,28 @@ pub mod state;
 
 pub struct App {
     client: Arc<UpClient>,
-    state: AppState,
-    tx: mpsc::UnboundedSender<AppEvent>,
-    rx: mpsc::UnboundedReceiver<AppEvent>,
+    pub state: AppState,
+    tx: mpsc::Sender<AppEvent>,
+    rx: mpsc::Receiver<AppEvent>,
+    pub toaster: ToastEngine<AppEvent>,
 }
 
 impl App {
     pub fn new(cfg: Config) -> anyhow::Result<Self> {
-        let (tx, rx) = mpsc::unbounded_channel::<AppEvent>();
+        let (tx, rx) = mpsc::channel::<AppEvent>(100);
+        let toast_engine = ToastEngineBuilder::new(Rect::default())
+            .action_tx(tx.clone())
+            .build();
         Ok(Self {
             client: Arc::new(UpClient::new(&cfg.api_token)?),
             state: AppState::new(cfg),
             tx,
             rx,
+            toaster: toast_engine,
         })
     }
 
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> anyhow::Result<()> {
-        self.state.set_status("Loading accounts...".into(), false);
-
         // Spawn crossterm event reader
         spawn_event_reader(self.tx.clone());
 
@@ -46,8 +50,9 @@ impl App {
         self.fetch_accounts();
         self.fetch_categories();
 
+        self.info("Loading accounts...").await;
         while !self.state.should_quit {
-            terminal.draw(|f| ui::draw(f, &mut self.state))?;
+            terminal.draw(|f| self.render(f.area(), f.buffer_mut()))?;
 
             if let Some(event) = self.rx.recv().await {
                 self.handle_event(event).await;
@@ -59,28 +64,28 @@ impl App {
 
     pub async fn handle_event(&mut self, event: AppEvent) {
         match event {
-            AppEvent::Key(key) => self.handle_key(key),
+            AppEvent::Key(key) => self.handle_key(key).await,
             AppEvent::AccountsLoaded(result) => match result {
                 Ok(accounts) => {
                     self.state.set_accounts(accounts);
-                    self.state.set_status("Accounts loaded".into(), false);
+                    self.success("Accounts loaded").await;
                     // Auto-fetch transactions for the first tab
                     if !self.state.accounts.is_empty() {
                         self.fetch_transactions(0);
                     }
                 }
                 Err(e) => {
-                    self.state
-                        .set_status(format!("Failed to load accounts: {}", e), true);
+                    self.error(format!("Failed to load accounts: {}", e)).await;
                 }
             },
             AppEvent::CategoriesLoaded(result) => match result {
                 Ok(categories) => {
+                    self.success("Categories loaded").await;
                     self.state.categories = categories.into_iter().collect();
                 }
                 Err(e) => {
-                    self.state
-                        .set_status(format!("Failed to load categories: {}", e), true);
+                    self.error(format!("Failed to load categories: {}", e))
+                        .await;
                 }
             },
             AppEvent::TransactionsLoaded { tab_index, result } => {
@@ -89,18 +94,21 @@ impl App {
                     match result {
                         Ok(transactions) => {
                             tab.transactions = Some(transactions);
+                            self.success("Transactions loaded").await;
                         }
                         Err(e) => {
-                            self.state
-                                .set_status(format!("Failed to load transactions: {}", e), true);
+                            self.error(format!("Failed to load transactions: {}", e))
+                                .await;
                         }
                     }
                 }
             }
+            AppEvent::ToastShow(msg) => self.toaster.show_toast(msg),
+            AppEvent::ToastHide => self.toaster.hide_toast(),
         }
     }
 
-    fn handle_key(&mut self, key: KeyEvent) {
+    async fn handle_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') => {
                 self.state.should_quit = true;
@@ -110,13 +118,11 @@ impl App {
             }
             KeyCode::Tab | KeyCode::Char('l') => {
                 self.state.next_tab();
-                self.state.clear_status();
-                self.maybe_fetch_transactions();
+                self.maybe_fetch_transactions().await;
             }
             KeyCode::BackTab | KeyCode::Char('h') => {
                 self.state.prev_tab();
-                self.state.clear_status();
-                self.maybe_fetch_transactions();
+                self.maybe_fetch_transactions().await;
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 if let Some(tab) = self.state.current_tab_mut()
@@ -210,17 +216,13 @@ impl App {
             }
             KeyCode::Char('t') => {
                 self.state.next_theme();
-                self.state.set_status(
-                    format!("Theme: {}", self.state.theme.name.display_name()),
-                    false,
-                );
+                self.info(format!("Theme: {}", self.state.theme.name.display_name()))
+                    .await;
             }
             KeyCode::Char('T') => {
                 self.state.prev_theme();
-                self.state.set_status(
-                    format!("Theme: {}", self.state.theme.name.display_name()),
-                    false,
-                );
+                self.info(format!("Theme: {}", self.state.theme.name.display_name()))
+                    .await;
             }
             _ => {}
         }
@@ -231,7 +233,7 @@ impl App {
         let tx = self.tx.clone();
         tokio::spawn(async move {
             let result = client.get_categories().await.map_err(Into::into);
-            let _ = tx.send(AppEvent::CategoriesLoaded(result));
+            let _ = tx.send(AppEvent::CategoriesLoaded(result)).await;
         });
     }
 
@@ -244,16 +246,17 @@ impl App {
                 .await
                 .map(|page| page.data)
                 .map_err(Into::into);
-            let _ = tx.send(AppEvent::AccountsLoaded(result));
+            let _ = tx.send(AppEvent::AccountsLoaded(result)).await;
         });
     }
 
-    fn maybe_fetch_transactions(&mut self) {
+    async fn maybe_fetch_transactions(&mut self) {
         let idx = self.state.active_tab;
         if let Some(tab) = self.state.tabs.get(idx)
             && tab.transactions.is_none()
             && !tab.loading
         {
+            self.info("Loading transactions...").await;
             self.fetch_transactions(idx);
         }
     }
@@ -272,8 +275,36 @@ impl App {
                     .await
                     .map(|page| page.data)
                     .map_err(Into::into);
-                let _ = tx.send(AppEvent::TransactionsLoaded { tab_index, result });
+                let _ = tx
+                    .send(AppEvent::TransactionsLoaded { tab_index, result })
+                    .await;
             });
         }
+    }
+
+    async fn toast(&mut self, msg: impl Into<String>, typ: ToastType) {
+        let _ = self
+            .tx
+            .send(
+                ToastMessage::Show {
+                    message: msg.into(),
+                    toast_type: typ,
+                    position: ToastPosition::TopRight,
+                }
+                .into(),
+            )
+            .await;
+    }
+
+    async fn success(&mut self, msg: impl Into<String>) {
+        self.toast(msg, ToastType::Success).await
+    }
+
+    async fn error(&mut self, msg: impl Into<String>) {
+        self.toast(msg, ToastType::Error).await
+    }
+
+    async fn info(&mut self, msg: impl Into<String>) {
+        self.toast(msg, ToastType::Info).await
     }
 }

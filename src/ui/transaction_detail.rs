@@ -1,15 +1,10 @@
 use jiff::tz::TimeZone;
-use ratatui::{
-    Frame,
-    layout::Rect,
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
-};
+use ratatui::prelude::*;
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
 
 use crate::app::state::AppState;
 
-pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
+pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     let palette = state.palette();
     let base_style = Style::default().fg(palette.fg).bg(palette.bg);
 
@@ -21,7 +16,7 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
                 .border_type(BorderType::Rounded)
                 .title(" Detail ")
                 .style(base_style);
-            f.render_widget(block, area);
+            block.render(area, buf);
             return;
         }
     };
@@ -35,7 +30,7 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
                     .border_type(BorderType::Rounded)
                     .title(" Detail ")
                     .style(base_style);
-                f.render_widget(block, area);
+                block.render(area, buf);
                 return;
             }
         },
@@ -45,7 +40,7 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
                 .border_type(BorderType::Rounded)
                 .title(" Detail ")
                 .style(base_style);
-            f.render_widget(block, area);
+            block.render(area, buf);
             return;
         }
     };
@@ -241,7 +236,7 @@ pub fn draw_detail_pane(f: &mut Frame, area: Rect, state: &AppState) {
         )
         .wrap(Wrap { trim: false });
 
-    f.render_widget(paragraph, area);
+    paragraph.render(area, buf);
 }
 
 fn add_field(

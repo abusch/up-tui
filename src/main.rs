@@ -3,7 +3,7 @@ mod client;
 mod config;
 mod ui;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ratatui::{init, restore};
 
 use crate::app::App;
@@ -11,13 +11,7 @@ use crate::app::App;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     // Load config before entering TUI mode
-    let cfg = match config::load_config() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {:#}", e);
-            std::process::exit(1);
-        }
-    };
+    let cfg = config::load_config().context("Failed to load configuration")?;
 
     let app = App::new(cfg)?;
 
