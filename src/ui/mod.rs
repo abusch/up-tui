@@ -3,18 +3,22 @@ pub mod tabs;
 pub mod transaction_detail;
 pub mod transaction_list;
 
+use opaline::ThemeSelector;
+use opaline::names::tokens;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Widget};
 
 use crate::app::App;
+use crate::app::state::AppMode;
 
 impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let palette = self.state.palette();
+        let bg = self.state.theme.color(tokens::BG_BASE).into();
+        let fg = self.state.theme.color(tokens::TEXT_PRIMARY).into();
 
         // Fill entire background with theme color
         Block::default()
-            .style(Style::default().bg(palette.bg).fg(palette.fg))
+            .style(Style::default().bg(bg).fg(fg))
             .render(area, buf);
 
         let chunks = Layout::vertical([
@@ -42,6 +46,16 @@ impl Widget for &mut App {
         if self.toaster.has_toast() {
             self.toaster.set_area(area);
             self.toaster.render(area, buf);
+        }
+
+        if let AppMode::Theme(ref mut state) = self.state.mode {
+            let centered_area = area.centered(Constraint::Ratio(2, 3), Constraint::Ratio(3, 4));
+            Block::new()
+                .style(Style::default().bg(bg))
+                .render(centered_area, buf);
+            ThemeSelector::new()
+                .title("Theme")
+                .render(centered_area, buf, state);
         }
     }
 }

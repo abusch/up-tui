@@ -1,10 +1,12 @@
+use opaline::names::tokens;
 use ratatui::prelude::*;
 use ratatui::widgets::Tabs;
 
 use crate::app::state::AppState;
 
 pub fn draw_tabs(buf: &mut Buffer, area: Rect, state: &AppState) {
-    let palette = state.palette();
+    let muted = state.theme.color(tokens::TEXT_MUTED).into();
+    let accent = state.theme.color(tokens::ACCENT_PRIMARY).into();
 
     let titles: Vec<Line> = state
         .accounts
@@ -17,12 +19,8 @@ pub fn draw_tabs(buf: &mut Buffer, area: Rect, state: &AppState) {
 
     let tabs = Tabs::new(titles)
         .select(state.active_tab)
-        .style(Style::default().fg(palette.muted))
-        .highlight_style(
-            Style::default()
-                .fg(palette.accent)
-                .add_modifier(Modifier::BOLD),
-        )
+        .style(Style::default().fg(muted))
+        .highlight_style(Style::default().fg(accent).add_modifier(Modifier::BOLD))
         .divider(Span::raw("│"));
 
     tabs.render(area, buf);

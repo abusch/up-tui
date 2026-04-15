@@ -1,17 +1,15 @@
 use std::collections::HashMap;
 
+use opaline::ThemeSelectorState;
 use ratatui::widgets::ListState;
-use ratatui_themes::{Theme, ThemePalette};
 
 use crate::client::models::{Account, Transaction};
 
 use crate::config::Config;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub enum AppMode {
     Normal,
-    Detail,
+    Theme(ThemeSelectorState),
 }
 
 pub struct TabState {
@@ -40,8 +38,7 @@ pub struct AppState {
     pub mode: AppMode,
     pub should_quit: bool,
     pub categories: HashMap<String, String>,
-    pub theme: Theme,
-    #[allow(dead_code)]
+    pub theme: opaline::Theme,
     pub config: Config,
     /// Whether the detail pane is visible.
     pub show_detail: bool,
@@ -58,23 +55,15 @@ impl AppState {
             mode: AppMode::Normal,
             should_quit: false,
             categories: HashMap::new(),
-            theme: Theme::new(config.theme),
+            theme: config
+                .theme
+                .as_deref()
+                .and_then(opaline::load_by_name)
+                .unwrap_or_default(),
             config,
             show_detail: false,
             list_height: 0,
         }
-    }
-
-    pub fn palette(&self) -> ThemePalette {
-        self.theme.palette()
-    }
-
-    pub fn next_theme(&mut self) {
-        self.theme = Theme::new(self.theme.name.next());
-    }
-
-    pub fn prev_theme(&mut self) {
-        self.theme = Theme::new(self.theme.name.prev());
     }
 
     pub fn set_accounts(&mut self, accounts: Vec<Account>) {

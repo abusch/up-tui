@@ -1,17 +1,11 @@
 use anyhow::{Context, Result};
-use ratatui_themes::ThemeName;
 use serde::Deserialize;
 use std::path::PathBuf;
 
 #[derive(Deserialize)]
 pub struct Config {
     pub api_token: String,
-    #[serde(default = "default_theme")]
-    pub theme: ThemeName,
-}
-
-fn default_theme() -> ThemeName {
-    ThemeName::TokyoNight
+    pub theme: Option<String>,
 }
 
 pub fn config_path() -> PathBuf {

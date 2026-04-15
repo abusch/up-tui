@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jiff::tz::TimeZone;
+use opaline::{ThemeSelectorAction, ThemeSelectorState, load_by_name};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, layout::Rect};
 use ratatui_toaster::{ToastEngine, ToastEngineBuilder, ToastMessage, ToastPosition, ToastType};
 use tokio::sync::mpsc;
 
+use crate::app::state::AppMode;
 use crate::{
     app::{
         event::{AppEvent, spawn_event_reader},
@@ -109,6 +111,22 @@ impl App {
     }
 
     async fn handle_key(&mut self, key: KeyEvent) {
+        match self.state.mode {
+            AppMode::Normal => self.handle_normal_key(key).await,
+            AppMode::Theme(ref mut state) => match state.handle_key(key) {
+                ThemeSelectorAction::Cancel => self.state.mode = AppMode::Normal,
+                ThemeSelectorAction::Select(new_theme) => {
+                    self.state.theme = load_by_name(&new_theme).unwrap();
+                    self.state.mode = AppMode::Normal;
+                }
+                ThemeSelectorAction::Navigate
+                | ThemeSelectorAction::FilterChanged
+                | ThemeSelectorAction::Noop => {}
+            },
+        }
+    }
+
+    async fn handle_normal_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') => {
                 self.state.should_quit = true;
@@ -215,14 +233,7 @@ impl App {
                 self.fetch_transactions(idx);
             }
             KeyCode::Char('t') => {
-                self.state.next_theme();
-                self.info(format!("Theme: {}", self.state.theme.name.display_name()))
-                    .await;
-            }
-            KeyCode::Char('T') => {
-                self.state.prev_theme();
-                self.info(format!("Theme: {}", self.state.theme.name.display_name()))
-                    .await;
+                self.state.mode = AppMode::Theme(ThemeSelectorState::default());
             }
             _ => {}
         }

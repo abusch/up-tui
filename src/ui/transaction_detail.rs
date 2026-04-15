@@ -1,12 +1,18 @@
 use jiff::tz::TimeZone;
+use opaline::names::tokens;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
 
 use crate::app::state::AppState;
 
 pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
-    let palette = state.palette();
-    let base_style = Style::default().fg(palette.fg).bg(palette.bg);
+    let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
+    let bg = state.theme.color(tokens::BG_BASE).into();
+    let secondary = state.theme.color(tokens::TEXT_SECONDARY).into();
+    let success = state.theme.color(tokens::SUCCESS).into();
+    let border = state.theme.color(tokens::BORDER_UNFOCUSED);
+
+    let base_style = Style::default().fg(fg).bg(bg);
 
     let tab = match state.current_tab() {
         Some(t) => t,
@@ -15,7 +21,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .title(" Detail ")
-                .style(base_style);
+                .style(border);
             block.render(area, buf);
             return;
         }
@@ -29,7 +35,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .title(" Detail ")
-                    .style(base_style);
+                    .style(border);
                 block.render(area, buf);
                 return;
             }
@@ -39,16 +45,14 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .title(" Detail ")
-                .style(base_style);
+                .style(border);
             block.render(area, buf);
             return;
         }
     };
 
-    let label_style = Style::default()
-        .fg(palette.secondary)
-        .add_modifier(Modifier::BOLD);
-    let value_style = Style::default().fg(palette.fg);
+    let label_style = Style::default().fg(secondary).add_modifier(Modifier::BOLD);
+    let value_style = Style::default().fg(fg);
 
     let mut lines = Vec::new();
 
@@ -65,9 +69,9 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     }
 
     let amount_color = if txn.amount.value_in_base_units >= 0 {
-        palette.success
+        success
     } else {
-        palette.fg
+        fg
     };
     lines.push(Line::from(vec![
         Span::styled("Amount:       ", label_style),
