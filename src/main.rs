@@ -3,7 +3,7 @@ mod client;
 mod config;
 mod ui;
 
-use anyhow::{Context, Result};
+use rootcause::{Result, prelude::*};
 use ratatui::{init, restore};
 
 use crate::app::App;

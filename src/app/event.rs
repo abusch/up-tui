@@ -1,4 +1,4 @@
-use anyhow::Result;
+use rootcause::Result;
 use crossterm::event::{Event, EventStream, KeyEvent};
 use futures::StreamExt;
 use ratatui_toaster::{ToastBuilder, ToastMessage};

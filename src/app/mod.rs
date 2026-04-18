@@ -30,7 +30,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cfg: Config) -> anyhow::Result<Self> {
+    pub fn new(cfg: Config) -> rootcause::Result<Self> {
         let (tx, rx) = mpsc::channel::<AppEvent>(100);
         let toast_engine = ToastEngineBuilder::new(Rect::default())
             .action_tx(tx.clone())
@@ -44,7 +44,7 @@ impl App {
         })
     }
 
-    pub async fn run(mut self, mut terminal: DefaultTerminal) -> anyhow::Result<()> {
+    pub async fn run(mut self, mut terminal: DefaultTerminal) -> rootcause::Result<()> {
         // Spawn crossterm event reader
         spawn_event_reader(self.tx.clone());
 
