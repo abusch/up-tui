@@ -5,8 +5,9 @@ pub mod transaction_list;
 
 use opaline::ThemeSelector;
 use opaline::names::tokens;
+use ratatui::layout::Spacing;
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Widget};
+use ratatui::widgets::{Block, Clear, Widget};
 
 use crate::app::App;
 use crate::app::state::AppMode;
@@ -32,8 +33,9 @@ impl Widget for &mut App {
 
         if self.state.show_detail {
             // Split main content horizontally: transaction list (left) + detail pane (right)
-            let content =
-                Layout::horizontal([Constraint::Fill(1), Constraint::Min(25)]).split(chunks[1]);
+            let content = Layout::horizontal([Constraint::Fill(2), Constraint::Fill(1)])
+                .spacing(Spacing::Overlap(1))
+                .split(chunks[1]);
 
             transaction_list::draw_transaction_list(buf, content[0], &mut self.state);
             transaction_detail::draw_detail_pane(buf, content[1], &self.state);
@@ -50,6 +52,7 @@ impl Widget for &mut App {
 
         if let AppMode::Theme(ref mut state) = self.state.mode {
             let centered_area = area.centered(Constraint::Ratio(2, 3), Constraint::Ratio(3, 4));
+            Clear.render(centered_area, buf);
             Block::new()
                 .style(Style::default().bg(bg))
                 .render(centered_area, buf);

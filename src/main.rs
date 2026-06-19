@@ -3,16 +3,13 @@ mod client;
 mod config;
 mod ui;
 
-use rootcause::{Result, prelude::*};
 use ratatui::{init, restore};
+use rootcause::{Result, prelude::*};
 
 use crate::app::App;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    // opaline::list_available_themes()
-    //     .iter()
-    //     .for_each(|theme| println!("{}", theme.name));
     // Load config before entering TUI mode
     let cfg = config::load_config().context("Failed to load configuration")?;
 

@@ -1,7 +1,9 @@
 use jiff::tz::TimeZone;
-use opaline::names::tokens;
-use ratatui::prelude::*;
-use ratatui::widgets::{Block, BorderType, Borders, HighlightSpacing, List, ListItem};
+use opaline::names::tokens::{self, ACCENT_PRIMARY};
+use ratatui::{
+    prelude::*,
+    widgets::{Block, HighlightSpacing, List, ListItem, Padding},
+};
 
 use crate::app::state::AppState;
 use crate::client::models::Transaction;
@@ -12,11 +14,9 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     state.list_height = area.height.saturating_sub(2) / 2;
 
     let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
-    let bg = state.theme.color(tokens::BG_BASE).into();
-    let muted = state.theme.color(tokens::TEXT_MUTED).into();
-    let accent = state.theme.color(tokens::ACCENT_PRIMARY).into();
+    let bg = state.theme.color(tokens::BG_PANEL).into();
+    let accent = state.theme.color(tokens::ACCENT_PRIMARY);
     let selection = state.theme.color(tokens::BG_SELECTION).into();
-    let border = state.theme.color(tokens::BORDER_FOCUSED);
 
     let base_style = Style::default().fg(fg).bg(bg);
 
@@ -54,11 +54,9 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
         Some(txns) => txns,
         None => {
             let block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(border)
                 .title(title)
                 .title_style(accent)
+                .padding(Padding::uniform(1))
                 .style(base_style);
             block.render(area, buf);
             return;
@@ -81,13 +79,13 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
 
         if last_date != Some(date) {
             last_date = Some(date);
-            let label = zdt.strftime("%a %-d %b").to_string().to_uppercase();
-            let padded = format!("{:<width$}", label, width = inner_width);
+            let label = zdt.strftime("%a %-d %b ").to_string().to_uppercase();
+            let padded = format!("{:┄<width$}", label, width = inner_width);
             items.push(ListItem::new(Line::from(Span::styled(
                 padded,
                 Style::default()
-                    .fg(bg)
-                    .bg(muted)
+                    .fg(state.theme.color(tokens::TEXT_DIM).into())
+                    .bg(bg)
                     .add_modifier(Modifier::BOLD),
             ))));
         }
@@ -99,15 +97,13 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let list = List::new(items)
         .block(
             Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(border)
                 .title(title)
                 .title_style(accent)
+                .padding(Padding::uniform(1))
                 .style(base_style),
         )
         .highlight_style(Style::default().bg(selection).add_modifier(Modifier::BOLD))
-        .highlight_symbol(Line::from(Span::styled("▎ ", Style::default().fg(accent))))
+        .highlight_symbol(state.theme.line(ACCENT_PRIMARY, "▎ "))
         .highlight_spacing(HighlightSpacing::Always)
         .repeat_highlight_symbol(true);
 
@@ -137,7 +133,7 @@ fn build_transaction_item<'a>(
         desc.clone()
     };
 
-    let padding = inner_width.saturating_sub(truncated_desc.len() + amount_len);
+    let padding = inner_width.saturating_sub(truncated_desc.len() + amount_len + 1);
 
     let amount_style = if txn.amount.value_in_base_units >= 0 {
         palette.color(tokens::SUCCESS)
@@ -146,7 +142,7 @@ fn build_transaction_item<'a>(
     };
 
     let line1 = Line::from(vec![
-        Span::raw(truncated_desc),
+        Span::styled(truncated_desc, palette.color(tokens::TEXT_PRIMARY)),
         Span::raw(" ".repeat(padding)),
         Span::styled(amount, amount_style),
     ]);

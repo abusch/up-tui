@@ -1,27 +1,27 @@
 use jiff::tz::TimeZone;
 use opaline::names::tokens;
-use ratatui::prelude::*;
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
+use ratatui::{
+    prelude::*,
+    widgets::{Block, Padding, Paragraph, Wrap},
+};
 
 use crate::app::state::AppState;
+use crate::client::models::TransactionStatus;
 
 pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
-    let bg = state.theme.color(tokens::BG_BASE).into();
+    let bg = state.theme.color(tokens::BG_CODE).into();
     let secondary = state.theme.color(tokens::TEXT_SECONDARY).into();
+    let warning = state.theme.color(tokens::WARNING).into();
     let success = state.theme.color(tokens::SUCCESS).into();
-    let border = state.theme.color(tokens::BORDER_UNFOCUSED);
+    let border = state.theme.color(tokens::BORDER_FOCUSED);
 
     let base_style = Style::default().fg(fg).bg(bg);
 
     let tab = match state.current_tab() {
         Some(t) => t,
         None => {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title(" Detail ")
-                .style(border);
+            let block = Block::default().title(" Detail ").style(border);
             block.render(area, buf);
             return;
         }
@@ -31,21 +31,13 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         Some(txns) => match txns.get(tab.selected) {
             Some(t) => t,
             None => {
-                let block = Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .title(" Detail ")
-                    .style(border);
+                let block = Block::default().title(" Detail ").style(border);
                 block.render(area, buf);
                 return;
             }
         },
         None => {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title(" Detail ")
-                .style(border);
+            let block = Block::default().title(" Detail ").style(border);
             block.render(area, buf);
             return;
         }
@@ -81,13 +73,11 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         ),
     ]));
 
-    add_field(
-        &mut lines,
-        "Status",
-        &txn.status.to_string(),
-        label_style,
-        value_style,
-    );
+    let (text, style) = match txn.status {
+        TransactionStatus::Held => ("Pending", warning),
+        TransactionStatus::Settled => ("Settled", success),
+    };
+    add_field(&mut lines, "Status", text, label_style, style.into());
 
     if let Some(ref txn_type) = txn.transaction_type {
         add_field(&mut lines, "Type", txn_type, label_style, value_style);
@@ -233,10 +223,9 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     let paragraph = Paragraph::new(lines)
         .block(
             Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
                 .title(" Detail ")
-                .style(base_style),
+                .style(base_style)
+                .padding(Padding::uniform(1)),
         )
         .wrap(Wrap { trim: false });
 
