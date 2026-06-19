@@ -74,7 +74,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let mut last_date: Option<jiff::civil::Date> = None;
 
     for txn in transactions {
-        let zdt = txn.created_at.to_zoned(tz.clone());
+        let zdt = txn.created_at.to_zoned_datetime(tz.clone());
         let date = zdt.date();
 
         if last_date != Some(date) {
@@ -115,7 +115,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
 
 fn build_transaction_item<'a>(
     txn: &Transaction,
-    zdt: &jiff::Zoned,
+    zdt: &jiff::ZonedDateTime,
     inner_width: usize,
     palette: &opaline::Theme,
 ) -> ListItem<'a> {

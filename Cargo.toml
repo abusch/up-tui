@@ -1,38 +1,38 @@
 [package]
 name = "up-tui"
-description = "A terminal UI for viewing Up Banking accounts and transactions"
-keywords = ["tui", "banking", "up-bank", "ratatui", "terminal"]
 version = "0.2.3"
 edition = "2024"
-authors = ["Antoine Büsch <antoine.busch@gmail.com>"]
-license = "MIT OR Apache-2.0"
+description = "A terminal UI for viewing Up Banking accounts and transactions"
 repository = "https://github.com/abusch/up-tui"
+license = "MIT OR Apache-2.0"
+keywords = ["banking", "ratatui", "terminal", "tui", "up-bank"]
 
 [[bin]]
 name = "up"
 path = "src/main.rs"
 
 [dependencies]
-rootcause = "0.12.1"
-jiff = { version = "0.2.23", features = ["serde"] }
 crossterm = { version = "0.29.0", features = ["event-stream"] }
-dirs = "6.0.0"
+dirs = "7.0.0"
 futures = "0.3.32"
-http-cache-reqwest = { version = "1.0.0-alpha.5", default-features = false, features = [
-  "manager-moka",
-  "url-standard",
-] }
+http-cache-reqwest = { version = "1.0.0-alpha.5", default-features = false, features = ["manager-moka", "reqwest-middleware", "url-standard"] }
+jiff = { version = "1.0.2", features = ["serde"] }
 opaline = { version = "0.4.0", features = ["widgets"] }
-ratatui = "0.30.0"
+ratatui = "0.30.2"
 ratatui-toaster = { version = "0.1.2", features = ["tokio"] }
 reqwest = { version = "0.13.2", features = ["json"] }
 reqwest-middleware = "0.5.1"
+rootcause = "0.13.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
-tokio = { version = "1.50.0", default-features = false, features = [
-  "net",
-  "rt",
-  "macros",
-] }
-toml = "1.1.2"
+tokio = {
+  version = "1.50.0",
+  default-features = false,
+  features = [
+    "macros",
+    "net",
+    "rt",
+  ]
+}
+toml = "1.2.2"

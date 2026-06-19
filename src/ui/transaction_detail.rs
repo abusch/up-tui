@@ -87,7 +87,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         &mut lines,
         "Created",
         &txn.created_at
-            .to_zoned(TimeZone::system())
+            .to_zoned_datetime(TimeZone::system())
             .strftime("%Y-%m-%d %H:%M:%S")
             .to_string(),
         label_style,
@@ -99,7 +99,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
             &mut lines,
             "Settled",
             &settled
-                .to_zoned(TimeZone::system())
+                .to_zoned_datetime(TimeZone::system())
                 .strftime("%Y-%m-%d %H:%M:%S")
                 .to_string(),
             label_style,

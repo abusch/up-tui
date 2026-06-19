@@ -192,17 +192,21 @@ impl App {
                     && let Some(ref txns) = tab.transactions
                     && !txns.is_empty()
                 {
-                    let current_date = txns[tab.selected].created_at.to_zoned(tz.clone()).date();
+                    let current_date = txns[tab.selected]
+                        .created_at
+                        .to_zoned_datetime(tz.clone())
+                        .date();
                     // Find the first transaction of the previous day
-                    if let Some(prev) = txns[..tab.selected]
-                        .iter()
-                        .rposition(|t| t.created_at.to_zoned(tz.clone()).date() != current_date)
-                    {
+                    if let Some(prev) = txns[..tab.selected].iter().rposition(|t| {
+                        t.created_at.to_zoned_datetime(tz.clone()).date() != current_date
+                    }) {
                         // prev is in the previous day; find the first transaction of that day
-                        let prev_date = txns[prev].created_at.to_zoned(tz.clone()).date();
+                        let prev_date = txns[prev].created_at.to_zoned_datetime(tz.clone()).date();
                         let first = txns[..=prev]
                             .iter()
-                            .position(|t| t.created_at.to_zoned(tz.clone()).date() == prev_date)
+                            .position(|t| {
+                                t.created_at.to_zoned_datetime(tz.clone()).date() == prev_date
+                            })
                             .unwrap_or(prev);
                         tab.selected = first;
                     }
@@ -214,12 +218,14 @@ impl App {
                     && let Some(ref txns) = tab.transactions
                     && !txns.is_empty()
                 {
-                    let current_date = txns[tab.selected].created_at.to_zoned(tz.clone()).date();
+                    let current_date = txns[tab.selected]
+                        .created_at
+                        .to_zoned_datetime(tz.clone())
+                        .date();
                     // Find the first transaction of the next day
-                    if let Some(pos) = txns[tab.selected + 1..]
-                        .iter()
-                        .position(|t| t.created_at.to_zoned(tz.clone()).date() != current_date)
-                    {
+                    if let Some(pos) = txns[tab.selected + 1..].iter().position(|t| {
+                        t.created_at.to_zoned_datetime(tz.clone()).date() != current_date
+                    }) {
                         tab.selected = tab.selected + 1 + pos;
                     }
                 }
