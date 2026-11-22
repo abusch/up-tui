@@ -203,11 +203,11 @@ impl App {
             KeyCode::Char('j') | KeyCode::Down => self.navigate(TabState::select_next),
             KeyCode::Char('k') | KeyCode::Up => self.navigate(TabState::select_prev),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let page_size = self.state.list_height as usize;
+                let page_size = self.state.page_size;
                 self.navigate(|tab| tab.page_down(page_size));
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let page_size = self.state.list_height as usize;
+                let page_size = self.state.page_size;
                 self.navigate(|tab| tab.page_up(page_size));
             }
             KeyCode::Char('g') => self.navigate(TabState::select_first),
@@ -293,7 +293,7 @@ impl App {
 
     fn maybe_fetch_next_page(&mut self) {
         let idx = self.state.active_tab;
-        let lookahead = self.state.list_height as usize;
+        let lookahead = self.state.page_size;
         if let Some(tab) = self.state.tabs.get(idx)
             && tab.wants_next_page(lookahead)
         {

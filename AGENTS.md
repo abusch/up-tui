@@ -53,7 +53,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `config` — the loaded `Config`
 - `tz` — the local `jiff` time zone, looked up once at startup; used for displaying times and grouping transactions by day (don't call `TimeZone::system()` elsewhere)
 - `show_detail` — whether the detail pane is visible
-- `list_height` — visible page size of the transaction list, in transaction items; written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
+- `page_size` — how many transactions fit in the list view (computed from the list block's inner area, 2 rows per item); written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
 
 `TabState` holds:
 
@@ -72,7 +72,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - On startup, accounts and categories are fetched. When accounts arrive, the active tab's transactions are fetched.
 - Transactions are fetched per tab on first view: switching to a tab with no loaded transactions (and nothing in flight) triggers a fetch. This also retries a tab whose previous load failed.
 - `r` re-fetches the account list (refreshing balances, and recovering if the initial accounts load failed) and the current tab's first page of transactions. Refreshes bypass the HTTP cache. Refreshing replaces the list with the first page only.
-- Transactions are fetched 50 per page. When navigation brings the selection within `list_height` items of the end of the loaded list and there is a `next_page`, the next page is fetched and appended.
+- Transactions are fetched 50 per page. When navigation brings the selection within `page_size` items of the end of the loaded list and there is a `next_page`, the next page is fetched and appended.
 - `TransactionsLoaded` identifies its tab by `account_id` (not tab index) plus `generation`.
 
 ### Toasts
@@ -81,7 +81,7 @@ Status messages (loading, success, errors) are shown as toasts in the top-right 
 
 ### Rendering
 
-`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the tab bar, the transaction list (and the detail pane on the right, taking one third of the width, when `show_detail` is set), the status bar, toasts, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `list_height`, updates each tab's `list_state`, and updates the toast area.
+`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the tab bar, the transaction list (and the detail pane on the right, taking one third of the width, when `show_detail` is set), the status bar, toasts, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size`, updates each tab's `list_state`, and updates the toast area.
 
 ## Project Structure
 

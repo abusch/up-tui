@@ -10,16 +10,24 @@ use crate::app::state::{AppState, LoadKind};
 use crate::client::models::Transaction;
 
 pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState) {
-    // Record visible page size for Ctrl+D/Ctrl+U scrolling in the key handler.
-    // Subtract 2 for borders, divide by 2 because each transaction item is 2 lines tall.
-    state.list_height = area.height.saturating_sub(2) / 2;
-
     let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
     let bg = state.theme.color(tokens::BG_PANEL).into();
     let accent = state.theme.color(tokens::ACCENT_PRIMARY);
     let selection = state.theme.color(tokens::BG_SELECTION).into();
 
     let base_style = Style::default().fg(fg).bg(bg);
+    let block = |title: &'static str| {
+        Block::default()
+            .title(title)
+            .title_style(accent)
+            .padding(Padding::uniform(1))
+            .style(base_style)
+    };
+
+    // Record how many transactions fit in the list, for Ctrl+D/Ctrl+U paging and for
+    // deciding when to load the next page. Each transaction item is 2 rows tall; day
+    // separator rows are ignored, so this is an upper bound.
+    state.page_size = usize::from(block(" Transactions ").inner(area).height / 2);
 
     let title;
     let transactions = match state.current_tab() {
@@ -54,12 +62,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let transactions = match transactions {
         Some(txns) => txns,
         None => {
-            let block = Block::default()
-                .title(title)
-                .title_style(accent)
-                .padding(Padding::uniform(1))
-                .style(base_style);
-            block.render(area, buf);
+            block(title).render(area, buf);
             return;
         }
     };
@@ -96,13 +99,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     }
 
     let list = List::new(items)
-        .block(
-            Block::default()
-                .title(title)
-                .title_style(accent)
-                .padding(Padding::uniform(1))
-                .style(base_style),
-        )
+        .block(block(title))
         .highlight_style(Style::default().bg(selection).add_modifier(Modifier::BOLD))
         .highlight_symbol(state.theme.line(ACCENT_PRIMARY, "▎ "))
         .highlight_spacing(HighlightSpacing::Always)

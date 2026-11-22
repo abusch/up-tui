@@ -183,8 +183,8 @@ pub struct AppState {
     pub tz: TimeZone,
     /// Whether the detail pane is visible.
     pub show_detail: bool,
-    /// Height of the transaction list area (in rows), updated during rendering.
-    pub list_height: u16,
+    /// Number of transactions that fit in the list view; updated during rendering.
+    pub page_size: usize,
 }
 
 impl AppState {
@@ -204,7 +204,7 @@ impl AppState {
             config,
             tz: TimeZone::system(),
             show_detail: false,
-            list_height: 0,
+            page_size: 0,
         }
     }
 
