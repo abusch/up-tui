@@ -1,9 +1,11 @@
 use crossterm::event::{Event, EventStream, KeyEvent, KeyEventKind};
 use futures::StreamExt;
-use rootcause::Result;
 use tokio::sync::mpsc;
 
-use crate::client::models::{Account, PaginatedResponse, Transaction};
+use crate::client::{
+    error::Result,
+    models::{Account, PaginatedResponse, Transaction},
+};
 
 pub enum AppEvent {
     Key(KeyEvent),

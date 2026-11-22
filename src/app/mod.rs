@@ -255,7 +255,7 @@ impl App {
         let client = Arc::clone(&self.client);
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            let result = client.get_categories().await.map_err(Into::into);
+            let result = client.get_categories().await;
             let _ = tx.send(AppEvent::CategoriesLoaded(result)).await;
         });
     }
@@ -269,8 +269,7 @@ impl App {
             let result = client
                 .get_accounts(PaginationOptions::default(), reload)
                 .await
-                .map(|page| page.data)
-                .map_err(Into::into);
+                .map(|page| page.data);
             let _ = tx
                 .send(AppEvent::AccountsLoaded { generation, result })
                 .await;
@@ -324,10 +323,7 @@ impl App {
         let client = Arc::clone(&self.client);
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            let result = client
-                .get_transactions(&account_id, opts, reload)
-                .await
-                .map_err(Into::into);
+            let result = client.get_transactions(&account_id, opts, reload).await;
             let _ = tx
                 .send(AppEvent::TransactionsLoaded {
                     account_id,

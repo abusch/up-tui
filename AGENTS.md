@@ -118,7 +118,7 @@ src/
 - Transaction relationships (category, parentCategory, tags) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs
 - `GET /categories` is called once on startup to populate the category ID → display name cache in `AppState`. The detail pane resolves IDs to names via `state.category_name()`, falling back to the raw ID if the cache hasn't loaded yet
 - Categories are hierarchical. The detail pane displays them on a single line as "Parent / Category" (e.g. "Good Life / Restaurants & Cafes")
-- Client errors are `client::error::Error`; they are converted to `rootcause` reports when sent as `AppEvent` results
+- Client errors are `client::error::Error` (thiserror), carried as-is in `AppEvent` results and shown in toasts via their `Display`. `rootcause` is only used for top-level errors that end the program (`main`, `config`, `App::new`/`App::run`)
 
 ## Key Bindings
 
