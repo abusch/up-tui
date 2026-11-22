@@ -10,7 +10,6 @@ pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
 
     let spans = vec![
         Span::styled("Tab/l", info),
-        // Span::styled("Tab/l", Style::default().fg(info)),
         Span::styled(": next  ", fg),
         Span::styled("S-Tab/h", info),
         Span::styled(": prev  ", fg),

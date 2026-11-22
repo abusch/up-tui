@@ -45,10 +45,7 @@ impl Widget for &mut App {
 
         status_bar::draw_status_bar(buf, chunks[2], &self.state);
 
-        self.update_toast_area(area);
-        if self.toaster.has_toast() {
-            self.toaster.render(area, buf);
-        }
+        self.render_toasts(area, buf);
 
         if let AppMode::Theme(ref mut state) = self.state.mode {
             let centered_area = area.centered(Constraint::Ratio(2, 3), Constraint::Ratio(3, 4));

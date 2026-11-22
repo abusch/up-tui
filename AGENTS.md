@@ -50,7 +50,6 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `accounts_generation` — incremented for every accounts fetch; stale `AccountsLoaded` results are dropped
 - `categories` — cached `HashMap<String, String>` mapping category IDs to display names, fetched once on startup via `GET /categories`
 - `theme` — the current `opaline::Theme`
-- `config` — the loaded `Config`
 - `tz` — the local `jiff` time zone, looked up once at startup; used for displaying times and grouping transactions by day (don't call `TimeZone::system()` elsewhere)
 - `show_detail` — whether the detail pane is visible
 - `page_size` — how many transactions fit in the list view (computed from the list block's inner area, 2 rows per item); written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
@@ -77,7 +76,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 
 ### Toasts
 
-Status messages (loading, success, errors) are shown as toasts in the top-right corner via `ratatui-toaster`. The toaster's built-in auto-hide is not used (no `action_tx`; the engine is `ToastEngine<()>`), because each of its timers hides whichever toast is current. Instead `App::toast()` shows the toast directly, assigns it an id, and spawns a 3-second timer that sends `ToastExpired(id)`; only the most recent toast's timer hides it. Toast positions are computed when a toast is shown, so `update_toast_area()` (called on every render) re-shows the visible toast when the screen size changes.
+Status messages (loading, success, errors) are shown as toasts in the top-right corner via `ratatui-toaster`. The toaster's built-in auto-hide is not used (no `action_tx`; the engine is `ToastEngine<()>`), because each of its timers hides whichever toast is current. Instead `App::toast()` shows the toast directly, assigns it an id, and spawns a 3-second timer that sends `ToastExpired(id)`; only the most recent toast's timer hides it. Toast positions are computed when a toast is shown, so `App::render_toasts()` (called on every render) re-shows the visible toast when the screen size changes. The toast engine is private to `App`; use `info()`/`success()`/`error()` to show toasts.
 
 ### Rendering
 

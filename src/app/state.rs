@@ -6,8 +6,6 @@ use ratatui::widgets::ListState;
 
 use crate::client::models::{Account, Transaction};
 
-use crate::config::Config;
-
 pub enum AppMode {
     Normal,
     Theme(ThemeSelectorState),
@@ -170,14 +168,12 @@ pub struct AppState {
     /// One tab per account, in the order the API returns them.
     pub tabs: Vec<TabState>,
     pub active_tab: usize,
-    #[allow(dead_code)]
     pub mode: AppMode,
     pub should_quit: bool,
     /// Incremented for every accounts fetch; stale results are dropped.
     pub accounts_generation: u64,
     pub categories: HashMap<String, String>,
     pub theme: opaline::Theme,
-    pub config: Config,
     /// Local time zone used to display times and group transactions by day.
     /// Looked up once at startup.
     pub tz: TimeZone,
@@ -188,7 +184,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config: Config) -> Self {
+    /// Create the initial state. `theme_name` is an opaline theme id; if it's `None`
+    /// (or fails to load) opaline's default theme is used.
+    pub fn new(theme_name: Option<&str>) -> Self {
         AppState {
             tabs: Vec::new(),
             active_tab: 0,
@@ -196,12 +194,9 @@ impl AppState {
             should_quit: false,
             accounts_generation: 0,
             categories: HashMap::new(),
-            theme: config
-                .theme
-                .as_deref()
+            theme: theme_name
                 .and_then(opaline::load_by_name)
                 .unwrap_or_default(),
-            config,
             tz: TimeZone::system(),
             show_detail: false,
             page_size: 0,
@@ -437,10 +432,7 @@ pub(crate) mod tests {
     }
 
     pub fn state() -> AppState {
-        AppState::new(Config {
-            api_token: "up:yeah:test".to_string(),
-            theme: None,
-        })
+        AppState::new(None)
     }
 
     #[test]

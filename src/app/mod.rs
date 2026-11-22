@@ -31,7 +31,7 @@ pub struct App {
     rx: mpsc::Receiver<AppEvent>,
     // The toaster's built-in auto-hide is not used (no `action_tx`): each of its timers
     // hides whichever toast is current, cutting later toasts short. See `toast()`.
-    pub toaster: ToastEngine<()>,
+    toaster: ToastEngine<()>,
     /// Id of the most recently shown toast; only its timer may hide it.
     toast_id: u64,
     /// The most recently shown toast, so it can be re-laid-out when the screen resizes.
@@ -55,7 +55,7 @@ impl App {
         let toast_engine = ToastEngineBuilder::new(Rect::default()).build();
         Ok(Self {
             client: Arc::new(UpClient::new(&cfg.api_token)?),
-            state: AppState::new(cfg),
+            state: AppState::new(cfg.theme.as_deref()),
             tx,
             rx,
             toaster: toast_engine,
@@ -220,7 +220,6 @@ impl App {
                 let tz = self.state.tz.clone();
                 self.navigate(|tab| tab.select_next_day(&tz));
             }
-            KeyCode::Enter => {}
             KeyCode::Char('o') => {
                 self.state.show_detail = !self.state.show_detail;
             }
@@ -352,19 +351,23 @@ impl App {
         });
     }
 
-    /// Update the screen area used to position toasts. A toast's position is computed
-    /// when it's shown, so a visible toast is re-shown to lay it out for the new size.
-    /// Called on every render; this also places toasts shown before the first render.
-    pub fn update_toast_area(&mut self, area: Rect) {
-        if area == self.screen_area {
-            return;
+    /// Render the current toast, if any, over the whole screen `area`.
+    ///
+    /// A toast's position is computed when it's shown, so if the screen size changed
+    /// since the last render the visible toast is re-shown to lay it out for the new
+    /// size. This also places toasts that were shown before the first render.
+    pub fn render_toasts(&mut self, area: Rect, buf: &mut Buffer) {
+        if area != self.screen_area {
+            self.screen_area = area;
+            self.toaster.set_area(area);
+            if self.toaster.has_toast()
+                && let Some((msg, typ)) = &self.last_toast
+            {
+                self.toaster.show_toast(toast_builder(msg.clone(), *typ));
+            }
         }
-        self.screen_area = area;
-        self.toaster.set_area(area);
-        if self.toaster.has_toast()
-            && let Some((msg, typ)) = &self.last_toast
-        {
-            self.toaster.show_toast(toast_builder(msg.clone(), *typ));
+        if self.toaster.has_toast() {
+            self.toaster.render(area, buf);
         }
     }
 
