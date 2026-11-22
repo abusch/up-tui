@@ -535,7 +535,7 @@ mod tests {
     fn state_with_selected(t: Transaction) -> AppState {
         let mut state = state();
         let mut tab = TabState::new(account("a", 0));
-        tab.set_transactions(vec![t], None);
+        tab.set_transactions(vec![t]);
         state.tabs.push(tab);
         state
     }

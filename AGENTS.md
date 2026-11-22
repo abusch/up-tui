@@ -35,7 +35,7 @@ When measuring or truncating text, measure whole graphemes (as `truncate_to_widt
 All input and API results flow through a single bounded `tokio::sync::mpsc::channel::<AppEvent>(100)`:
 
 - **Terminal events**: `spawn_event_reader` runs a crossterm `EventStream` on a tokio task. It forwards key presses (key *releases* are ignored, so keys aren't handled twice on platforms that report them) as `AppEvent::Key`, and terminal resizes as `AppEvent::Resize` (handled as a no-op; receiving any event triggers a redraw). If the input stream errors or ends, it sends `AppEvent::InputError`, and `run()` returns that error, so the app exits instead of hanging with no keyboard.
-- **API results**: spawned tasks send `AppEvent::AccountsLoaded`, `AppEvent::TransactionsLoaded`, `AppEvent::RecentLoaded`, or `AppEvent::CategoriesLoaded` when HTTP requests complete.
+- **API results**: spawned tasks send `AppEvent::AccountsLoaded`, `AppEvent::TransactionsLoaded`, or `AppEvent::CategoriesLoaded` when HTTP requests complete.
 - **Toast timers**: `AppEvent::ToastExpired(id)` (see Toasts below).
 
 The main loop is: draw → recv event → handle event → repeat, until `state.should_quit`.
@@ -63,25 +63,25 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 `TabState` holds:
 
 - `account` — the `Account` this tab shows (name, type, ownership, balance)
-- `transactions` — `None` until the first successful load
-- `selected` — index into `transactions`. Invariant: `selected < transactions.len()` (or 0 when empty). Always replace the list via `set_transactions()`, which keeps the same transaction selected (by `id`) when it is still present and clamps otherwise.
-- `loading` — `Option<LoadKind>`: `Replace` (initial load/refresh) or `Append` (next page)
-- `generation` — incremented by `start_load()` for every fetch; results carrying an older generation were superseded and are dropped
-- `next_page` — URL of the next page of transactions, if any
+- `store` — the account's `TransactionStore` (see below)
+- `selected` — index into the store's transactions. Invariant: `selected < len` (or 0 when empty). Pages go into the store through `TabState::page_loaded()`, which, when the list is replaced, keeps the same transaction selected (by `id`) if it is still present and clamps otherwise.
 - `list_state` — ratatui `ListState`, used for scrolling
-- `recent` — all of the account's transactions over the last `RECENT_DAYS` (30) days, including today, for the account header's totals; `None` until the first successful load. It's fetched separately from the paginated `transactions` (see Loading). `recent_totals()` adds them up into money in and money out
-- `recent_loading` / `recent_generation` — like `loading` and `generation`, for fetches of `recent` (started with `start_recent_load()`)
+
+`recent_totals()` adds up the recent period's transactions into money in and money out.
+
+`TransactionStore` (`src/app/store.rs`) holds one copy of the account's transactions, newest first, as the API returns them. The transaction list, the account header's totals and the Insights view all read from it: `transactions()` is everything loaded, and `recent()` is the transactions over the last `RECENT_DAYS` (30) days including today, or `None` until they're all loaded. It also holds the page cursor (`next_page`), the fetch in flight (`loading()`: `LoadKind::Replace` for one starting from the newest page, `Append` for the next page; at most one at a time) and a generation per fetch, so superseded results are dropped. The store is plain state that decides what to fetch next; `App` makes the requests.
 
 `set_accounts()` keeps the `TabState` of accounts that still exist (matched by account id, with the account data such as the balance updated) and keeps the active tab on the same account.
 
 ### Loading, Refresh and Pagination
 
-- On startup, accounts and categories are fetched. When accounts arrive, the active tab's transactions (and recent transactions) are fetched.
-- Transactions are fetched per tab on first view by `ensure_tab_loaded()`: switching to a tab with no loaded transactions (and nothing in flight) triggers a fetch, and likewise for its recent transactions. This also retries a tab whose previous load failed.
-- The recent transactions are fetched with `filter[since]` set to `recent_since()` (local midnight at the start of the period), following every page (100 per page) in one task; they arrive as `RecentLoaded`. A failure shows an error toast; success shows none.
-- `r` re-fetches the account list (refreshing balances, and recovering if the initial accounts load failed), the current tab's first page of transactions, and its recent transactions. Refreshes bypass the HTTP cache. Refreshing replaces the list with the first page only.
-- Transactions are fetched 50 per page. When navigation brings the selection within `page_size` items of the end of the loaded list and there is a `next_page`, the next page is fetched and appended.
-- `TransactionsLoaded` and `RecentLoaded` identify their tab by `account_id` (not tab index) plus a generation.
+- On startup, accounts and categories are fetched. When accounts arrive, the active tab's transactions are fetched.
+- `App::load_tab()` asks the tab's store for the next fetch (`TransactionStore::next_fetch()`, given the start of the recent period, `recent_since()`, and whether the list wants more) and starts it. The store asks for, in order: the rest of a refresh in progress; the first page if nothing has loaded; the next page if the recent period isn't all loaded, or the selection is within `page_size` items of the end of the list. `load_tab()` is called after every page loads, so loading carries on until the recent period is covered, when accounts arrive, when switching tabs (`ensure_tab_loaded()`, which also shows a toast for a first load), and after every Normal-mode or detail-popup key. It isn't called after a failure, so a failed fetch is retried by the next of those, not straight away.
+- On the first load, the first page is shown as soon as it arrives, and the rest of the recent period is appended.
+- `r` re-fetches the account list (refreshing balances, and recovering if the initial accounts load failed) and refreshes the current tab (`TransactionStore::refresh()`), which supersedes any fetch in flight. A refresh fetches from the newest page until the recent period is covered, keeping the old transactions until then and replacing them all at once (dropping any older pages), so the list, totals and Insights always show the same data. If it fails, the old transactions stay. Pages fetched from the newest one bypass the HTTP cache.
+- There are no separate fetches for the recent period: following the page cursor until a transaction older than the period's start (or the last page) gets the same transactions as `filter[since]` would, and they stay in the list.
+- Transactions are fetched 100 per page (`store::PAGE_SIZE`, the API's maximum), so a month usually takes one request.
+- `TransactionsLoaded` identifies its tab by `account_id` (not tab index) plus the fetch's generation. Only pages that replace the list show a success toast; failures show an error toast.
 
 ### Toasts
 
@@ -94,12 +94,12 @@ Status messages (loading, success, errors) are shown as toasts in the top-right 
 The sidebar (`src/ui/sidebar.rs`) lists the accounts under a heading per account type, each with its balance right-aligned, the selected one highlighted like the selected transaction, and the total of all balances at the bottom (when there's more than one account and `MoneyObject::sum` can add them up, i.e. they're in the same currency). Its width fits the longest row, between 20 and 40 columns and at most a third of the screen; longer names are truncated. 
 The account header (`src/ui/account_header.rs`) sits above the transaction list and the detail pane. It shows the selected account's name, type and ownership on one line, then its balance and, right-aligned, its money in and out over the last 30 days (on a line of their own if they don't fit). The totals show "loading…" until they're loaded, the stale totals while they're refreshed, and nothing if loading failed. Its height comes from `header_height()` (0 when there is no account yet). Because the header names the account, the list's title is just "Transactions" plus the loading status. `ui::right_aligned()` is the shared helper for a line with a right-aligned part that wraps onto its own line when it doesn't fit (also used for the detail pane's amount and status).
 
-The Insights view (`src/ui/insights.rs`) replaces the transaction list and detail pane below the header when `view` is `View::Insights`. It's computed from the tab's `recent` transactions (the same 30 days as the header's totals; no extra fetch), with the statistics in `src/app/insights.rs` as pure, unit-tested functions:
+The Insights view (`src/ui/insights.rs`) replaces the transaction list and detail pane below the header when `view` is `View::Insights`. It's computed from the store's `recent()` transactions (the same 30 days as the header's totals), with the statistics in `src/app/insights.rs` as pure, unit-tested functions:
 
 - **Balance** (`daily_balances()`), at the top: the balance at the end of each day, worked backwards from the current balance through the recent transactions, drawn as a ratatui `Chart` (Braille line) with the first, middle and last dates. The vertical axis (`YAxis`) always includes zero, so the line's height is in proportion to the balance rather than exaggerating small changes, and is rounded out to multiples of a round step (1, 2 or 5 × a power of ten, at least one whole currency unit), which label it as whole amounts ("$2000"). The section has a fixed height (`BALANCE_HEIGHT`), so the chart is the same size for every account; on a short screen it shrinks to leave room for the categories, and is left out below `MIN_BALANCE_HEIGHT`.
 - **Spending by category** (`spending_by_category()`), below it: the debits, excluding transfers between the user's own accounts (`transfer_account` is set), summed per category (`None` is shown as "Uncategorised"), largest first; refunds aren't subtracted. Each category is a row with a bar (in eighths of a column, relative to the largest), the amount and its share. The list gets the space left by the balance section; if the categories don't fit, the smallest are grouped as "Other".
 
-While `recent` hasn't loaded, the view shows "Loading…", or a message to press `r` if loading failed.
+While `recent()` isn't loaded, the view shows "Loading…", or a message to press `r` if loading failed.
 
 The detail pane and the detail popup (both in `src/ui/transaction_detail.rs`) show the same content, built by `detail_lines()`, for `state.selected_transaction()`. The popup is centred, at most 72 columns wide, and shrinks to the height of its content; it draws nothing if no transaction is selected. The content has a header (description, amount with the status right-aligned, category, tags) followed by sections (When, Details, Note, Message, Raw text) that are left out when empty. Redundant information is hidden: the hold amount when it equals the final amount, and the raw text when it matches the description. Its lines are wrapped to the pane's width by `textwrap` (first-fit), with long field values indented to the value column, so the `Paragraph` is rendered without its own wrapping. Dates are shown as "Today, 14:32", "Yesterday, …" or "Mon 18 Nov, …" (with the year only if it isn't the current one).
 
@@ -117,7 +117,8 @@ src/
 
   app/
     mod.rs             App: main loop, event and key handling, fetch spawning, toasts
-    state.rs           AppState, AppMode, View, TabState, LoadKind
+    state.rs           AppState, AppMode, View, TabState
+    store.rs           TransactionStore: an account's transactions, paging, refresh
     insights.rs        Statistics for the Insights view (spending by category, daily balances)
     event.rs           AppEvent enum, crossterm event reader task
 
@@ -137,8 +138,7 @@ src/
 - Base URL: `https://api.up.com.au/api/v1`
 - Auth: `Authorization: Bearer {token}` set as a default header on the `reqwest::Client`
 - The client is wrapped with `reqwest-middleware` and `http-cache-reqwest` (in-memory Moka cache, `CacheMode::Default`). Endpoint methods take a `reload` flag; when set, the request uses `CacheMode::Reload` (bypass the cache, update it with the response). It is used for user-initiated refreshes.
-- `get_accounts` and `get_transactions` take `PaginationOptions` (page size 50, or a `next_url` from a previous response) and return `PaginatedResponse { data, next_page_url }`
-- `get_transactions_since` fetches all of an account's transactions created since a timestamp (`filter[since]`), following every page
+- `get_accounts` and `get_transactions` take `PaginationOptions` (a page size, 50 by default and 100 for transactions, or a `next_url` from a previous response) and return `PaginatedResponse { data, next_page_url }`
 - `Resource<A, R>` is generic over attributes (`A`) and relationships (`R`, defaults to `serde_json::Value`)
 - Format money with the `MoneyObject` methods: `format_display()` for transaction amounts (`+$10.56` for credits, `$10.56` for debits, which are distinguished by colour), `format_signed()` for balances (`-$10.56`), `format_unsigned()` for totals known to be money out (`$10.56`, and `$0.00` rather than `format_display()`'s `+$0.00`), and `format_display_with_code()` for foreign currencies (`+10.56 USD` / `10.56 USD`, signed like `format_display()`). They take the sign from `value_in_base_units` and the digits from the API's `value` string; don't parse `value` as a float or assume two decimal places for foreign currencies. Add amounts up with `MoneyObject::sum()` (exact, in base units; `None` for mixed currencies), starting from `zero_like()` when there may be nothing to add; `with_base_units()` makes an amount in the same currency from base units (e.g. for chart labels), and `base_units_per_unit()` gives the number of base units in a whole unit (100 for dollars)
 - Transaction relationships (category, parentCategory, tags, transferAccount) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs. The detail pane resolves the transfer account's name from the loaded accounts via `state.account_name()`
@@ -172,7 +172,7 @@ src/
 | `Enter`             | Theme picker | Apply the selected theme                    |
 | `Esc`               | Theme picker | Close without changing the theme            |
 
-Key handling lives in `App::handle_key`, which dispatches on the mode to `App::handle_normal_key`, `App::handle_detail_key`, or `ThemeSelectorState::handle_key`. The navigation keys, shared by Normal mode and the detail popup, are in `App::handle_navigation_key`. Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. In the Insights view, the keys that act on the transaction list (navigation, `Enter`, `o`) are ignored. After every Normal-mode or detail-popup key, `maybe_fetch_next_page()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` (one list per mode, and for the Insights view) should be kept in sync with the bindings.
+Key handling lives in `App::handle_key`, which dispatches on the mode to `App::handle_normal_key`, `App::handle_detail_key`, or `ThemeSelectorState::handle_key`. The navigation keys, shared by Normal mode and the detail popup, are in `App::handle_navigation_key`. Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. In the Insights view, the keys that act on the transaction list (navigation, `Enter`, `o`) are ignored. After every Normal-mode or detail-popup key, `load_tab()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` (one list per mode, and for the Insights view) should be kept in sync with the bindings.
 
 ## Theming
 

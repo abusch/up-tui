@@ -20,17 +20,9 @@ pub enum AppEvent {
     TransactionsLoaded {
         /// Identifies the tab by account, since tab indices can shift when accounts reload.
         account_id: String,
-        /// Matches `TabState::generation` unless superseded by a later fetch.
+        /// The `Fetch::generation` of the fetch; stale results are dropped by the store.
         generation: u64,
         result: Result<PaginatedResponse<Transaction>>,
-    },
-    /// An account's transactions over the recent period, for the header's totals.
-    RecentLoaded {
-        /// Identifies the tab by account, like `TransactionsLoaded`.
-        account_id: String,
-        /// Matches `TabState::recent_generation` unless superseded by a later fetch.
-        generation: u64,
-        result: Result<Vec<Transaction>>,
     },
     CategoriesLoaded(Result<Vec<(String, String)>>),
     /// The display timer for the toast with this id has run out.

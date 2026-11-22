@@ -11,7 +11,8 @@ use ratatui_toaster::{
 use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
-use crate::app::state::{AppMode, LoadKind, RECENT_DAYS, TabState, View, recent_since};
+use crate::app::state::{AppMode, TabState, View, recent_since};
+use crate::app::store::{Fetch, LoadKind, PageOutcome};
 use crate::backend::AppTerminal;
 use crate::{
     app::{
@@ -25,6 +26,7 @@ use crate::{
 pub mod event;
 pub mod insights;
 pub mod state;
+pub mod store;
 
 pub struct App {
     client: Arc<UpClient>,
@@ -109,7 +111,7 @@ impl App {
                     Ok(accounts) => {
                         self.state.set_accounts(accounts);
                         self.success("Accounts loaded");
-                        self.ensure_tab_loaded();
+                        self.load_tab(self.state.active_tab);
                     }
                     Err(e) => {
                         self.error(format!(
@@ -136,59 +138,30 @@ impl App {
                 generation,
                 result,
             } => {
-                let Some(tab) = self
-                    .state
-                    .tab_index(&account_id)
-                    .and_then(|idx| self.state.tabs.get_mut(idx))
-                else {
+                let Some(idx) = self.state.tab_index(&account_id) else {
                     return; // account no longer exists
                 };
-                if tab.generation != generation {
-                    return; // superseded by a later fetch
-                }
-                let kind = tab.loading.take();
+                let tab = &mut self.state.tabs[idx];
                 match result {
-                    Ok(page) if kind == Some(LoadKind::Append) => {
-                        tab.append_transactions(page.data, page.next_page_url);
-                    }
-                    Ok(page) => {
-                        tab.set_transactions(page.data, page.next_page_url);
-                        self.success("Transactions loaded");
-                    }
+                    Ok(page) => match tab.page_loaded(generation, page) {
+                        None => return, // superseded by a later fetch
+                        Some(PageOutcome::Replaced) => self.success("Transactions loaded"),
+                        Some(PageOutcome::Appended | PageOutcome::Staged) => {}
+                    },
                     Err(e) => {
+                        if !tab.store.load_failed(generation) {
+                            return; // superseded by a later fetch
+                        }
                         self.error(format!(
                             "Failed to load transactions: {}",
                             e.format_current_context()
                         ));
+                        // Not retried until the user does something.
+                        return;
                     }
                 }
-            }
-            AppEvent::RecentLoaded {
-                account_id,
-                generation,
-                result,
-            } => {
-                let Some(tab) = self
-                    .state
-                    .tab_index(&account_id)
-                    .and_then(|idx| self.state.tabs.get_mut(idx))
-                else {
-                    return; // account no longer exists
-                };
-                if tab.recent_generation != generation {
-                    return; // superseded by a later fetch
-                }
-                tab.recent_loading = false;
-                match result {
-                    // No toast on success: the transactions' own toast is enough.
-                    Ok(transactions) => tab.recent = Some(transactions),
-                    Err(e) => {
-                        self.error(format!(
-                            "Failed to load the last {RECENT_DAYS} days' totals: {}",
-                            e.format_current_context()
-                        ));
-                    }
-                }
+                // Carry on until the recent period is loaded (or a refresh is complete).
+                self.load_tab(idx);
             }
             AppEvent::ToastExpired(id) => {
                 if id == self.toast_id {
@@ -229,15 +202,11 @@ impl App {
             }
             KeyCode::Tab | KeyCode::Char('l') => {
                 self.state.next_tab();
-                if self.ensure_tab_loaded() {
-                    self.info("Loading transactions...");
-                }
+                self.ensure_tab_loaded();
             }
             KeyCode::BackTab | KeyCode::Char('h') => {
                 self.state.prev_tab();
-                if self.ensure_tab_loaded() {
-                    self.info("Loading transactions...");
-                }
+                self.ensure_tab_loaded();
             }
             KeyCode::Char('i') => {
                 self.state.view = match self.state.view {
@@ -255,9 +224,7 @@ impl App {
                     self.info("Loading accounts...");
                 }
                 self.fetch_accounts(true);
-                let idx = self.state.active_tab;
-                self.fetch_transactions(idx, LoadKind::Replace, None, true);
-                self.fetch_recent(idx, true);
+                self.refresh_tab(self.state.active_tab);
             }
             KeyCode::Char('t') => {
                 self.state.mode = AppMode::Theme(ThemeSelectorState::with_current_selected());
@@ -275,8 +242,9 @@ impl App {
             _ => self.handle_navigation_key(key),
         }
 
-        // If navigation brought the selection near the end of what's loaded, fetch more.
-        self.maybe_fetch_next_page();
+        // If navigation brought the selection near the end of what's loaded, fetch more
+        // (or retry a failed fetch).
+        self.load_tab(self.state.active_tab);
     }
 
     /// Keys while the detail popup is open: it can be closed, and the navigation keys
@@ -292,7 +260,7 @@ impl App {
             _ => self.handle_navigation_key(key),
         }
 
-        self.maybe_fetch_next_page();
+        self.load_tab(self.state.active_tab);
     }
 
     /// Keys that move the selection in the active tab's transaction list.
@@ -354,84 +322,67 @@ impl App {
         });
     }
 
-    /// Start loading the active tab's transactions, and its recent transactions for the
-    /// header's totals, if they haven't been loaded and nothing is in flight. Returns
-    /// whether a fetch of the transaction list was started.
-    fn ensure_tab_loaded(&mut self) -> bool {
+    /// Start loading the active tab's transactions if they haven't loaded (or a
+    /// previous load failed), and nothing is in flight.
+    fn ensure_tab_loaded(&mut self) {
         let idx = self.state.active_tab;
-        let Some(tab) = self.state.tabs.get(idx) else {
-            return false;
-        };
-        if tab.recent.is_none() && !tab.recent_loading {
-            self.fetch_recent(idx, false);
-        }
-        let tab = &self.state.tabs[idx];
-        if tab.transactions.is_none() && tab.loading.is_none() {
-            self.fetch_transactions(idx, LoadKind::Replace, None, false);
-            true
-        } else {
-            false
+        if self.load_tab(idx) && self.state.tabs[idx].store.transactions().is_none() {
+            self.info("Loading transactions...");
         }
     }
 
-    /// Fetch a tab's transactions over the recent period, for the header's totals.
-    fn fetch_recent(&mut self, tab_index: usize, reload: bool) {
+    /// Start the fetch the tab needs next, if any (see `TransactionStore::next_fetch`).
+    /// Returns whether one was started.
+    fn load_tab(&mut self, tab_index: usize) -> bool {
+        let Some(since) = self.recent_since() else {
+            return false;
+        };
+        let lookahead = self.state.page_size;
+        let Some(tab) = self.state.tabs.get_mut(tab_index) else {
+            return false;
+        };
+        let wants_more = tab.wants_more(lookahead);
+        let Some(fetch) = tab.store.next_fetch(since, wants_more) else {
+            return false;
+        };
+        let account_id = tab.account.id.clone();
+        self.spawn_fetch(account_id, fetch);
+        true
+    }
+
+    /// Reload the tab's transactions from the newest page, superseding any fetch in
+    /// flight.
+    fn refresh_tab(&mut self, tab_index: usize) {
+        let Some(since) = self.recent_since() else {
+            return;
+        };
+        let Some(tab) = self.state.tabs.get_mut(tab_index) else {
+            return;
+        };
+        let fetch = tab.store.refresh(since);
+        let account_id = tab.account.id.clone();
+        self.spawn_fetch(account_id, fetch);
+    }
+
+    /// The start of the recent period, as of now.
+    fn recent_since(&self) -> Option<jiff::Timestamp> {
         let today = jiff::Timestamp::now()
             .to_zoned_datetime(self.state.tz.clone())
             .date();
-        let Some(since) = recent_since(today, &self.state.tz) else {
-            return;
-        };
-        let Some(tab) = self.state.tabs.get_mut(tab_index) else {
-            return;
-        };
-        let account_id = tab.account.id.clone();
-        let generation = tab.start_recent_load();
-        let client = Arc::clone(&self.client);
-        let tx = self.tx.clone();
-        tokio::spawn(async move {
-            let result = client
-                .get_transactions_since(&account_id, since, reload)
-                .await;
-            let _ = tx
-                .send(AppEvent::RecentLoaded {
-                    account_id,
-                    generation,
-                    result,
-                })
-                .await;
-        });
+        recent_since(today, &self.state.tz)
     }
 
-    fn maybe_fetch_next_page(&mut self) {
-        let idx = self.state.active_tab;
-        let lookahead = self.state.page_size;
-        if let Some(tab) = self.state.tabs.get(idx)
-            && tab.wants_next_page(lookahead)
-        {
-            let next_url = tab.next_page.clone();
-            self.fetch_transactions(idx, LoadKind::Append, next_url, false);
-        }
-    }
-
-    /// Fetch transactions for a tab: the first page (`next_url == None`) or the page at
-    /// `next_url`. Any fetch already in flight for the tab is superseded.
-    fn fetch_transactions(
-        &mut self,
-        tab_index: usize,
-        kind: LoadKind,
-        next_url: Option<String>,
-        reload: bool,
-    ) {
-        let Some(tab) = self.state.tabs.get_mut(tab_index) else {
-            return;
-        };
-        let account_id = tab.account.id.clone();
-        let generation = tab.start_load(kind);
+    /// Fetch a page of an account's transactions, sending the result as
+    /// `TransactionsLoaded`.
+    fn spawn_fetch(&self, account_id: String, fetch: Fetch) {
         let opts = PaginationOptions {
-            next_url,
-            ..Default::default()
+            page_size: store::PAGE_SIZE,
+            next_url: fetch.url,
         };
+        // Pages fetched from the newest one (initial loads and refreshes) bypass the
+        // HTTP cache, so a refresh gets up-to-date transactions.
+        let reload = fetch.kind == LoadKind::Replace;
+        let generation = fetch.generation;
         let client = Arc::clone(&self.client);
         let tx = self.tx.clone();
         tokio::spawn(async move {

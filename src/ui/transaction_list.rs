@@ -7,7 +7,8 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::state::{AppState, LoadKind};
+use crate::app::state::AppState;
+use crate::app::store::LoadKind;
 use crate::client::models::Transaction;
 
 pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState) {
@@ -33,7 +34,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     // The title shows the loading status. (The account header names the account.)
     let (status, transactions) = match state.current_tab() {
         None => ("", None),
-        Some(tab) => match (&tab.transactions, tab.loading) {
+        Some(tab) => match (tab.store.transactions(), tab.store.loading()) {
             (None, Some(_)) => (" - Loading...", None),
             (Some(txns), loading) if !txns.is_empty() => {
                 let status = match loading {
@@ -168,7 +169,7 @@ mod tests {
         let mut state = AppState::new(None);
         state.tz = jiff::tz::TimeZone::UTC;
         let mut tab = TabState::new(account("a", 0));
-        tab.set_transactions(vec![txn("t0", "2026-11-20T18:00:00Z")], None);
+        tab.set_transactions(vec![txn("t0", "2026-11-20T18:00:00Z")]);
         state.tabs.push(tab);
 
         let area = Rect::new(0, 0, 40, 10);

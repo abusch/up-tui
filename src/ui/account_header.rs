@@ -66,7 +66,7 @@ fn header_lines(tab: &TabState, state: &AppState, width: usize) -> Vec<Line<'sta
     )];
     let period = Span::styled(format!("Last {RECENT_DAYS} days  "), dim);
     // Stale totals stay visible while they're refreshed.
-    let totals = match (tab.recent_totals(), tab.recent_loading) {
+    let totals = match (tab.recent_totals(), tab.store.loading().is_some()) {
         (Some((money_in, money_out)), _) => vec![
             period,
             Span::styled("in ", dim),
@@ -148,7 +148,7 @@ mod tests {
             amount: money(cents),
             ..txn(id, "2026-11-20T18:00:00Z")
         };
-        state.tabs[0].recent = Some(vec![with_amount("a", 50000), with_amount("b", -1250)]);
+        state.tabs[0].set_transactions(vec![with_amount("a", 50000), with_amount("b", -1250)]);
         assert_eq!(
             render(&state, 60),
             [
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn totals_move_to_their_own_line_when_narrow() {
         let mut state = state_with_saver();
-        state.tabs[0].recent = Some(Vec::new());
+        state.tabs[0].set_transactions(Vec::new());
         assert_eq!(
             render(&state, 40),
             [
@@ -177,12 +177,13 @@ mod tests {
     #[test]
     fn totals_show_when_they_are_loading_and_not_when_they_failed() {
         let mut state = state_with_saver();
-        state.tabs[0].recent_loading = true;
+        let since = "2026-11-01T00:00:00Z".parse().unwrap();
+        let fetch = state.tabs[0].store.next_fetch(since, false).unwrap();
         assert_eq!(
             render(&state, 60)[1],
             " $2400.00                            Last 30 days  loading…"
         );
-        state.tabs[0].recent_loading = false;
+        state.tabs[0].store.load_failed(fetch.generation);
         assert_eq!(render(&state, 60)[1], " $2400.00");
     }
 

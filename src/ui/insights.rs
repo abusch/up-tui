@@ -43,8 +43,8 @@ pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
     let Some(tab) = state.current_tab() else {
         return;
     };
-    let Some(recent) = &tab.recent else {
-        let message = if tab.recent_loading {
+    let Some(recent) = tab.store.recent() else {
+        let message = if tab.store.loading().is_some() {
             "Loading…".to_string()
         } else {
             format!("Couldn't load the last {RECENT_DAYS} days' transactions. Press r to retry.")
@@ -204,7 +204,7 @@ fn percent(part: i64, total: i64) -> String {
 
 /// The balance at the end of each day of the period, as a line chart.
 fn draw_balance_chart(buf: &mut Buffer, area: Rect, tab: &TabState, state: &AppState) {
-    let Some(recent) = &tab.recent else {
+    let Some(recent) = tab.store.recent() else {
         return;
     };
     if area.height < 2 {
@@ -454,7 +454,7 @@ mod tests {
     fn renders_at_any_size_without_panicking() {
         let mut state = state();
         let mut tab = TabState::new(account("a", 123456));
-        tab.recent = Some(vec![Transaction {
+        tab.set_transactions(vec![Transaction {
             amount: money(-2500),
             ..txn("t", "2026-11-20T10:00:00Z")
         }]);

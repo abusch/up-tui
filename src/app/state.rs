@@ -5,9 +5,11 @@ use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
 use opaline::ThemeSelectorState;
 use ratatui::widgets::ListState;
 
-use crate::client::models::{Account, MoneyObject, Transaction};
+use crate::app::store::{PageOutcome, TransactionStore};
+use crate::client::models::{Account, MoneyObject, PaginatedResponse, Transaction};
 
-/// The number of days, including today, that the account header's totals cover.
+/// The number of days, including today, that the account header's totals and the
+/// Insights view cover.
 pub const RECENT_DAYS: i32 = 30;
 
 /// Start of the period the account header's totals cover: midnight at the start of
@@ -33,64 +35,30 @@ pub enum AppMode {
     Theme(ThemeSelectorState),
 }
 
-/// What kind of transaction fetch is in flight for a tab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoadKind {
-    /// Initial load or refresh: the result replaces the list.
-    Replace,
-    /// Next page: the result is appended to the list.
-    Append,
-}
-
-/// A tab: one account plus the state of its transaction list.
+/// A tab: one account, its transactions, and the state of its transaction list.
 pub struct TabState {
     pub account: Account,
-    pub transactions: Option<Vec<Transaction>>,
+    /// The account's transactions, and their loading.
+    pub store: TransactionStore,
+    /// Index into the loaded transactions. Invariant: `selected < len` (or 0 if empty),
+    /// which the navigation handlers rely on.
     pub selected: usize,
-    /// The fetch currently in flight, if any.
-    pub loading: Option<LoadKind>,
-    /// Incremented for every fetch started. Results carrying an older value were
-    /// superseded by a later fetch and are dropped.
-    pub generation: u64,
-    /// URL of the next page of transactions, if there are more to load.
-    pub next_page: Option<String>,
     pub list_state: ListState,
-    /// All the account's transactions since `recent_since`, for the header's totals;
-    /// `None` until the first successful load. Fetched separately from the paginated
-    /// `transactions`.
-    pub recent: Option<Vec<Transaction>>,
-    /// Whether a fetch of `recent` is in flight.
-    pub recent_loading: bool,
-    /// Like `generation`, for fetches of `recent`.
-    pub recent_generation: u64,
 }
 
 impl TabState {
     pub fn new(account: Account) -> Self {
         TabState {
             account,
-            transactions: None,
+            store: TransactionStore::default(),
             selected: 0,
-            loading: None,
-            generation: 0,
-            next_page: None,
             list_state: ListState::default(),
-            recent: None,
-            recent_loading: false,
-            recent_generation: 0,
         }
-    }
-
-    /// Mark a new fetch of `recent` as started and return its generation.
-    pub fn start_recent_load(&mut self) -> u64 {
-        self.recent_generation += 1;
-        self.recent_loading = true;
-        self.recent_generation
     }
 
     /// Money in (credits) and money out (debits) over the recent period, if loaded.
     pub fn recent_totals(&self) -> Option<(MoneyObject, MoneyObject)> {
-        let recent = self.recent.as_ref()?;
+        let recent = self.store.recent()?;
         // Start from zero, so that a period with no credits (or debits) adds up to zero.
         let zero = self.account.balance.zero_like();
         let total = |debits: bool| {
@@ -103,39 +71,36 @@ impl TabState {
         Some((total(false)?, total(true)?))
     }
 
-    /// Mark a new fetch as started and return its generation.
-    pub fn start_load(&mut self, kind: LoadKind) -> u64 {
-        self.generation += 1;
-        self.loading = Some(kind);
-        self.generation
+    /// Pass a page loaded by the fetch with this generation to the store (see
+    /// `TransactionStore::page_loaded`). When it replaces the list, the same transaction
+    /// stays selected if it's still there, and otherwise the selection is clamped to the
+    /// new list.
+    pub fn page_loaded(
+        &mut self,
+        generation: u64,
+        page: PaginatedResponse<Transaction>,
+    ) -> Option<PageOutcome> {
+        let selected_id = self.txns().get(self.selected).map(|t| t.id.clone());
+        let outcome = self.store.page_loaded(generation, page)?;
+        if outcome == PageOutcome::Replaced {
+            let txns = self.txns();
+            self.selected = selected_id
+                .and_then(|id| txns.iter().position(|t| t.id == id))
+                .unwrap_or_else(|| self.selected.min(txns.len().saturating_sub(1)));
+        }
+        Some(outcome)
     }
 
-    /// Replace the transaction list, keeping the same transaction selected if it is
-    /// still present, and otherwise clamping the selection to the new list's bounds.
-    /// This maintains the invariant `selected < transactions.len()` (or 0 if empty)
-    /// that the navigation handlers rely on.
-    pub fn set_transactions(&mut self, transactions: Vec<Transaction>, next_page: Option<String>) {
-        let selected_id = self
-            .transactions
-            .as_ref()
-            .and_then(|txns| txns.get(self.selected))
-            .map(|t| t.id.as_str());
-        self.selected = selected_id
-            .and_then(|id| transactions.iter().position(|t| t.id == id))
-            .unwrap_or_else(|| self.selected.min(transactions.len().saturating_sub(1)));
-        self.transactions = Some(transactions);
-        self.next_page = next_page;
-    }
-
-    /// Append a further page of transactions. The selection is unaffected.
-    pub fn append_transactions(&mut self, more: Vec<Transaction>, next_page: Option<String>) {
-        self.transactions.get_or_insert_with(Vec::new).extend(more);
-        self.next_page = next_page;
+    /// Replace the loaded transactions, for tests.
+    #[cfg(test)]
+    pub fn set_transactions(&mut self, transactions: Vec<Transaction>) {
+        self.store = TransactionStore::loaded(transactions, None);
+        self.selected = 0;
     }
 
     /// The loaded transactions, or an empty slice if none are loaded yet.
     fn txns(&self) -> &[Transaction] {
-        self.transactions.as_deref().unwrap_or_default()
+        self.store.transactions().unwrap_or_default()
     }
 
     /// Index of the last loaded transaction (0 if there are none).
@@ -204,13 +169,11 @@ impl TabState {
         }
     }
 
-    /// Whether the next page should be fetched: there is one, nothing is loading, and
-    /// the selection is within `lookahead` rows of the end of the loaded list.
-    pub fn wants_next_page(&self, lookahead: usize) -> bool {
-        match (&self.transactions, &self.next_page, self.loading) {
-            (Some(txns), Some(_), None) => self.selected + lookahead.max(1) >= txns.len(),
-            _ => false,
-        }
+    /// Whether the list wants more transactions: the selection is within `lookahead`
+    /// rows of the end of the loaded ones. The store fetches the next page if there is
+    /// one (see `TransactionStore::next_fetch`).
+    pub fn wants_more(&self, lookahead: usize) -> bool {
+        self.selected + lookahead.max(1) >= self.txns().len()
     }
 }
 
@@ -311,7 +274,7 @@ impl AppState {
     /// The selected transaction in the active tab, if any.
     pub fn selected_transaction(&self) -> Option<&Transaction> {
         let tab = self.current_tab()?;
-        tab.transactions.as_ref()?.get(tab.selected)
+        tab.store.transactions()?.get(tab.selected)
     }
 
     pub fn current_tab_mut(&mut self) -> Option<&mut TabState> {
@@ -390,17 +353,14 @@ pub(crate) mod tests {
     /// indices 0-1 on Nov 20, 2-4 on Nov 19, 5 on Nov 17.
     fn tab() -> TabState {
         let mut tab = TabState::new(account("a", 0));
-        tab.set_transactions(
-            vec![
-                txn("t0", "2026-11-20T18:00:00Z"),
-                txn("t1", "2026-11-20T09:00:00Z"),
-                txn("t2", "2026-11-19T22:00:00Z"),
-                txn("t3", "2026-11-19T12:00:00Z"),
-                txn("t4", "2026-11-19T01:00:00Z"),
-                txn("t5", "2026-11-17T15:00:00Z"),
-            ],
-            None,
-        );
+        tab.set_transactions(vec![
+            txn("t0", "2026-11-20T18:00:00Z"),
+            txn("t1", "2026-11-20T09:00:00Z"),
+            txn("t2", "2026-11-19T22:00:00Z"),
+            txn("t3", "2026-11-19T12:00:00Z"),
+            txn("t4", "2026-11-19T01:00:00Z"),
+            txn("t5", "2026-11-17T15:00:00Z"),
+        ]);
         tab
     }
 
@@ -469,45 +429,53 @@ pub(crate) mod tests {
         assert_eq!(selected_after(1, |t| t.select_next_day(&tz)), 3);
     }
 
+    /// Refresh the tab with a single page of these transactions.
+    fn refresh_with(tab: &mut TabState, transactions: Vec<Transaction>) {
+        let fetch = tab.store.refresh("2026-11-01T00:00:00Z".parse().unwrap());
+        let page = PaginatedResponse {
+            data: transactions,
+            next_page_url: None,
+        };
+        assert_eq!(
+            tab.page_loaded(fetch.generation, page),
+            Some(PageOutcome::Replaced)
+        );
+    }
+
     #[test]
-    fn set_transactions_keeps_the_selected_transaction() {
+    fn a_refresh_keeps_the_selected_transaction() {
         let mut tab = tab();
         tab.selected = 2; // t2
-        tab.set_transactions(
+        refresh_with(
+            &mut tab,
             vec![
                 txn("new", "2026-11-21T08:00:00Z"),
                 txn("t0", "2026-11-20T18:00:00Z"),
                 txn("t1", "2026-11-20T09:00:00Z"),
                 txn("t2", "2026-11-19T22:00:00Z"),
             ],
-            None,
         );
         assert_eq!(tab.selected, 3);
     }
 
     #[test]
-    fn set_transactions_clamps_when_the_selection_is_gone() {
+    fn a_refresh_clamps_the_selection_when_it_is_gone() {
         let mut tab = tab();
         tab.selected = 5; // t5
-        tab.set_transactions(vec![txn("t0", "2026-11-20T18:00:00Z")], None);
+        refresh_with(&mut tab, vec![txn("t0", "2026-11-20T18:00:00Z")]);
         assert_eq!(tab.selected, 0);
-        tab.set_transactions(Vec::new(), None);
+        refresh_with(&mut tab, Vec::new());
         assert_eq!(tab.selected, 0);
     }
 
     #[test]
-    fn wants_next_page_near_the_end_only() {
+    fn wants_more_near_the_end_only() {
         let mut tab = tab();
-        tab.next_page = Some("next".to_string());
         tab.selected = 0;
-        assert!(!tab.wants_next_page(3));
+        assert!(!tab.wants_more(3));
         tab.selected = 3;
-        assert!(tab.wants_next_page(3));
-        tab.loading = Some(LoadKind::Append);
-        assert!(!tab.wants_next_page(3), "not while loading");
-        tab.loading = None;
-        tab.next_page = None;
-        assert!(!tab.wants_next_page(3), "not without a next page");
+        assert!(tab.wants_more(3));
+        assert!(TabState::new(account("a", 0)).wants_more(3));
     }
 
     pub fn account(id: &str, cents: i64) -> Account {
@@ -542,7 +510,7 @@ pub(crate) mod tests {
             amount: money(cents),
             ..txn(id, "2026-11-20T18:00:00Z")
         };
-        tab.recent = Some(vec![
+        tab.set_transactions(vec![
             with_amount("t0", -1050),
             with_amount("t1", 420000),
             with_amount("t2", -250),
@@ -551,7 +519,7 @@ pub(crate) mod tests {
         assert_eq!(money_in.format_display(), "+$4200.00");
         assert_eq!(money_out.format_display(), "$13.00");
 
-        tab.recent = Some(Vec::new());
+        tab.set_transactions(Vec::new());
         let (money_in, money_out) = tab.recent_totals().unwrap();
         assert_eq!(
             (money_in.value.as_str(), money_out.value.as_str()),
@@ -598,8 +566,8 @@ pub(crate) mod tests {
     fn set_accounts_keeps_tab_state_and_updates_account_data() {
         let mut s = state();
         s.set_accounts(vec![account("a", 100), account("b", 200)]);
+        s.tabs[1].set_transactions(vec![txn("t", "2026-11-20T18:00:00Z")]);
         s.tabs[1].selected = 7;
-        s.tabs[1].next_page = Some("next".to_string());
         s.active_tab = 1;
 
         // "b" moves to the front, gets a new balance, and "c" is new.
@@ -613,7 +581,7 @@ pub(crate) mod tests {
         assert_eq!(ids, ["b", "c", "a"]);
         assert_eq!(s.active_tab, 0, "active tab should follow account b");
         assert_eq!(s.tabs[0].selected, 7);
-        assert_eq!(s.tabs[0].next_page.as_deref(), Some("next"));
+        assert_eq!(s.tabs[0].txns().len(), 1);
         assert_eq!(s.tabs[0].account.balance.value_in_base_units, 999);
         assert_eq!(s.tabs[1].selected, 0);
     }
