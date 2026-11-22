@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use opaline::{ThemeSelectorAction, ThemeSelectorState};
+use ratatui::layout::Rect;
 use ratatui::prelude::*;
-use ratatui::{DefaultTerminal, layout::Rect};
 use ratatui_toaster::{
     ToastBuilder, ToastConstraint, ToastEngine, ToastEngineBuilder, ToastPosition, ToastType,
 };
@@ -12,6 +12,7 @@ use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
 use crate::app::state::{AppMode, LoadKind, RECENT_DAYS, TabState, recent_since};
+use crate::backend::AppTerminal;
 use crate::{
     app::{
         event::{AppEvent, spawn_event_reader},
@@ -65,7 +66,7 @@ impl App {
         })
     }
 
-    pub async fn run(mut self, mut terminal: DefaultTerminal) -> rootcause::Result<()> {
+    pub async fn run(mut self, mut terminal: AppTerminal) -> rootcause::Result<()> {
         // Spawn crossterm event reader
         spawn_event_reader(self.tx.clone());
 

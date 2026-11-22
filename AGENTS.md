@@ -24,7 +24,11 @@ theme = "tokyo-night"  # optional
 
 ### Runtime Setup
 
-`main()` is `#[tokio::main(flavor = "current_thread")]`. It loads the config, builds the `App` (including the HTTP client), then calls `ratatui::init()`, runs `App::run()`, and calls `ratatui::restore()`. `ratatui::init()` also installs a panic hook that restores the terminal.
+`main()` is `#[tokio::main(flavor = "current_thread")]`. It loads the config, builds the `App` (including the HTTP client), then calls `backend::init()`, runs `App::run()`, and calls `ratatui::restore()`. `backend::init()` sets up the terminal with `ratatui::init()` (raw mode, alternate screen, and a panic hook that restores the terminal), but returns an `AppTerminal`, whose crossterm backend is wrapped in `WideCharBackend`.
+
+`WideCharBackend` (`src/backend.rs`) works around a ratatui bug. When an emoji containing U+FE0F (e.g. "🛋️") is drawn over non-blank cells, ratatui's diff also emits the cell under the emoji's second column, and the crossterm backend writes it right after the emoji without moving the cursor. Terminals that draw the emoji two columns wide have already moved past that column, so it and the rest of the run of cells land one column to the right. The wrapper drops updates to cells covered by the wide character just drawn, so the backend moves the cursor before the next cell. Keep using it (and `AppTerminal`) rather than `ratatui::DefaultTerminal` until it's no longer needed: this is ratatui issue #2651, fixed by ratatui PR #2721, which isn't in a release as of ratatui-crossterm 0.1.2. Once a ratatui-crossterm release includes that fix, upgrade, delete `src/backend.rs`, and go back to `ratatui::init()` and `DefaultTerminal`.
+
+When measuring or truncating text, measure whole graphemes (as `truncate_to_width()` does), like ratatui, not single `char`s: an emoji with U+FE0F is 2 columns wide although its characters' widths add up to 1.
 
 ### Event Loop
 
@@ -96,6 +100,7 @@ The detail pane and the detail popup (both in `src/ui/transaction_detail.rs`) sh
 ```
 src/
   main.rs              Entry point: load config, init terminal, run app, restore
+  backend.rs           Terminal setup, and a backend wrapper working around a ratatui emoji bug
   config.rs            Locate, load and validate config.toml
 
   client/
@@ -199,4 +204,4 @@ Run `cargo test` after making changes. Unit tests live alongside the code in `#[
 - **Config errors**: Returned from `main()` and printed to stderr before entering TUI mode.
 - **API/network errors**: Shown as error toasts. The app remains usable with stale data; `r` retries.
 - **Terminal input errors**: `run()` returns the error, the terminal is restored, and the app exits.
-- **Panics**: The panic hook installed by `ratatui::init()` restores the terminal.
+- **Panics**: The panic hook installed by `ratatui::init()` (called by `backend::init()`) restores the terminal.

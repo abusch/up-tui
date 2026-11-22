@@ -1,9 +1,10 @@
 mod app;
+mod backend;
 mod client;
 mod config;
 mod ui;
 
-use ratatui::{init, restore};
+use ratatui::restore;
 use rootcause::{Result, prelude::*};
 
 use crate::app::App;
@@ -15,7 +16,7 @@ async fn main() -> Result<()> {
 
     let app = App::new(cfg)?;
 
-    let terminal = init();
+    let terminal = backend::init().context("Failed to initialize the terminal")?;
     let result = app.run(terminal).await;
     restore();
 

@@ -4,7 +4,8 @@ use ratatui::{
     widgets::{Block, HighlightSpacing, List, ListItem, Padding},
 };
 
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use crate::app::state::{AppState, LoadKind};
 use crate::client::models::Transaction;
@@ -140,12 +141,14 @@ pub(super) fn truncate_to_width(s: &str, max_width: usize) -> String {
     let budget = max_width - 1; // reserve one column for the ellipsis
     let mut out = String::new();
     let mut width = 0;
-    for c in s.chars() {
-        let w = c.width().unwrap_or(0);
+    // Measure whole graphemes, as ratatui does: an emoji followed by a variation
+    // selector is wider than its characters' widths added up, and mustn't be split.
+    for grapheme in s.graphemes(true) {
+        let w = grapheme.width();
         if width + w > budget {
             break;
         }
-        out.push(c);
+        out.push_str(grapheme);
         width += w;
     }
     out.push('…');
@@ -201,6 +204,15 @@ mod tests {
         let s = truncate_to_width("寿司寿司", 6);
         assert_eq!(s, "寿司…");
         assert!(s.width() <= 6);
+    }
+
+    #[test]
+    fn emoji_with_a_selector_are_measured_whole() {
+        // "🏖\u{FE0F}" is 2 columns, though its characters are 1 and 0 columns wide.
+        let s = truncate_to_width("🏖\u{FE0F}🏖\u{FE0F} Beach", 4);
+        assert_eq!(s, "🏖\u{FE0F}…");
+        assert_eq!(s.width(), 3);
+        assert_eq!(truncate_to_width("a🏖\u{FE0F}bc", 3), "a…");
     }
 
     #[test]
