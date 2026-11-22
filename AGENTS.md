@@ -151,9 +151,9 @@ The picker (`ThemeSelector`) draws itself with opaline's *global* theme, and pre
 
 All UI modules read colors from `state.theme` via semantic tokens (`opaline::names::tokens`) — no hardcoded colors, and nothing drawn by a third-party widget with its own colours. Use `theme.color(token)`; `theme.line()`/`span()`/`style()` take opaline *style* names (`opaline::names::styles`), not tokens, and silently return an unstyled result for an unknown name. Tokens in use:
 
-- `BG_BASE` / `TEXT_PRIMARY` — base background and foreground
-- `BG_PANEL` — transaction list background; `BG_CODE` — detail pane background
-- `BORDER_UNFOCUSED` — the detail pane's left border, which separates it from the list (many themes use the same colour for `BG_PANEL` and `BG_CODE`)
+- `BG_BASE` / `TEXT_PRIMARY` — base background and foreground, including the tab bar, transaction list and status bar
+- `BG_PANEL` — detail pane background (the transaction list is on `BG_BASE`)
+- `BORDER_UNFOCUSED` — the detail pane's left border, which separates it from the list (some themes use the same colour for `BG_BASE` and `BG_PANEL`)
 - `BG_ELEVATED` — toast and theme picker backgrounds
 - `BG_SELECTION` — selected row background
 - `ACCENT_PRIMARY` — active tab, list and detail pane titles, selection marker

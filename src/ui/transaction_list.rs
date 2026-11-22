@@ -11,7 +11,7 @@ use crate::client::models::Transaction;
 
 pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState) {
     let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
-    let bg = state.theme.color(tokens::BG_PANEL).into();
+    let bg = state.theme.color(tokens::BG_BASE).into();
     let accent = state.theme.color(tokens::ACCENT_PRIMARY);
     let selection = state.theme.color(tokens::BG_SELECTION).into();
 

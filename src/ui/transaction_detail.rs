@@ -9,13 +9,13 @@ use crate::client::models::TransactionStatus;
 
 pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
-    let bg = state.theme.color(tokens::BG_CODE).into();
+    let bg = state.theme.color(tokens::BG_PANEL).into();
     let secondary = state.theme.color(tokens::TEXT_SECONDARY).into();
     let warning = state.theme.color(tokens::WARNING).into();
     let success = state.theme.color(tokens::SUCCESS).into();
 
-    // The left border separates the pane from the list: in many themes `BG_CODE` is
-    // the same colour as the list's `BG_PANEL`.
+    // The left border separates the pane from the list: in some themes `BG_PANEL` is
+    // the same colour as the list's `BG_BASE`.
     let block = Block::default()
         .title(" Detail ")
         .title_style(state.theme.color(tokens::ACCENT_PRIMARY))
