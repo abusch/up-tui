@@ -296,7 +296,7 @@ impl App {
             KeyCode::Char('r') => {
                 // Re-fetch accounts too: this refreshes balances, and recovers if the
                 // initial accounts load failed (in which case there are no tabs yet).
-                if self.state.accounts.is_empty() {
+                if self.state.tabs.is_empty() {
                     self.info("Loading accounts...");
                 }
                 self.fetch_accounts(true);
@@ -374,13 +374,10 @@ impl App {
         next_url: Option<String>,
         reload: bool,
     ) {
-        let (Some(account), Some(tab)) = (
-            self.state.accounts.get(tab_index),
-            self.state.tabs.get_mut(tab_index),
-        ) else {
+        let Some(tab) = self.state.tabs.get_mut(tab_index) else {
             return;
         };
-        let account_id = account.id.clone();
+        let account_id = tab.account.id.clone();
         let generation = tab.start_load(kind);
         let opts = PaginationOptions {
             next_url,

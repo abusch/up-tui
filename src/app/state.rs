@@ -21,7 +21,9 @@ pub enum LoadKind {
     Append,
 }
 
+/// A tab: one account plus the state of its transaction list.
 pub struct TabState {
+    pub account: Account,
     pub transactions: Option<Vec<Transaction>>,
     pub selected: usize,
     /// The fetch currently in flight, if any.
@@ -35,8 +37,9 @@ pub struct TabState {
 }
 
 impl TabState {
-    pub fn new() -> Self {
+    pub fn new(account: Account) -> Self {
         TabState {
+            account,
             transactions: None,
             selected: 0,
             loading: None,
@@ -87,7 +90,7 @@ impl TabState {
 }
 
 pub struct AppState {
-    pub accounts: Vec<Account>,
+    /// One tab per account, in the order the API returns them.
     pub tabs: Vec<TabState>,
     pub active_tab: usize,
     #[allow(dead_code)]
@@ -107,7 +110,6 @@ pub struct AppState {
 impl AppState {
     pub fn new(config: Config) -> Self {
         AppState {
-            accounts: Vec::new(),
             tabs: Vec::new(),
             active_tab: 0,
             mode: AppMode::Normal,
@@ -125,29 +127,32 @@ impl AppState {
         }
     }
 
-    /// Replace the account list. Tabs for accounts that still exist keep their loaded
-    /// transactions and selection, and the active tab stays on the same account.
+    /// Replace the account list. Tabs for accounts that still exist are updated with
+    /// the new account data (e.g. balance) but keep their loaded transactions and
+    /// selection, and the active tab stays on the same account.
     pub fn set_accounts(&mut self, accounts: Vec<Account>) {
-        let active_id = self.accounts.get(self.active_tab).map(|a| a.id.clone());
+        let active_id = self.current_tab().map(|t| t.account.id.clone());
         let mut old_tabs: HashMap<String, TabState> = self
-            .accounts
+            .tabs
             .drain(..)
-            .map(|a| a.id)
-            .zip(self.tabs.drain(..))
+            .map(|t| (t.account.id.clone(), t))
             .collect();
         self.tabs = accounts
-            .iter()
-            .map(|a| old_tabs.remove(&a.id).unwrap_or_else(TabState::new))
+            .into_iter()
+            .map(|account| match old_tabs.remove(&account.id) {
+                Some(mut tab) => {
+                    tab.account = account;
+                    tab
+                }
+                None => TabState::new(account),
+            })
             .collect();
-        self.active_tab = active_id
-            .and_then(|id| accounts.iter().position(|a| a.id == id))
-            .unwrap_or(0);
-        self.accounts = accounts;
+        self.active_tab = active_id.and_then(|id| self.tab_index(&id)).unwrap_or(0);
     }
 
     /// Index of the tab showing the given account.
     pub fn tab_index(&self, account_id: &str) -> Option<usize> {
-        self.accounts.iter().position(|a| a.id == account_id)
+        self.tabs.iter().position(|t| t.account.id == account_id)
     }
 
     pub fn current_tab(&self) -> Option<&TabState> {
@@ -159,15 +164,15 @@ impl AppState {
     }
 
     pub fn next_tab(&mut self) {
-        if !self.accounts.is_empty() {
-            self.active_tab = (self.active_tab + 1) % self.accounts.len();
+        if !self.tabs.is_empty() {
+            self.active_tab = (self.active_tab + 1) % self.tabs.len();
         }
     }
 
     pub fn prev_tab(&mut self) {
-        if !self.accounts.is_empty() {
+        if !self.tabs.is_empty() {
             self.active_tab = if self.active_tab == 0 {
-                self.accounts.len() - 1
+                self.tabs.len() - 1
             } else {
                 self.active_tab - 1
             };
@@ -176,5 +181,74 @@ impl AppState {
 
     pub fn category_name<'a>(&'a self, id: &'a str) -> &'a str {
         self.categories.get(id).map(|s| s.as_str()).unwrap_or(id)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::client::models::MoneyObject;
+
+    pub fn account(id: &str, cents: i64) -> Account {
+        Account {
+            id: id.to_string(),
+            display_name: format!("Account {id}"),
+            account_type: "TRANSACTIONAL".to_string(),
+            balance: MoneyObject {
+                currency_code: "AUD".to_string(),
+                value: format!("{}.{:02}", cents / 100, cents % 100),
+                value_in_base_units: cents,
+            },
+        }
+    }
+
+    pub fn state() -> AppState {
+        AppState::new(Config {
+            api_token: "up:yeah:test".to_string(),
+            theme: None,
+        })
+    }
+
+    #[test]
+    fn set_accounts_creates_one_tab_per_account() {
+        let mut s = state();
+        s.set_accounts(vec![account("a", 100), account("b", 200)]);
+        let ids: Vec<_> = s.tabs.iter().map(|t| t.account.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b"]);
+        assert_eq!(s.active_tab, 0);
+    }
+
+    #[test]
+    fn set_accounts_keeps_tab_state_and_updates_account_data() {
+        let mut s = state();
+        s.set_accounts(vec![account("a", 100), account("b", 200)]);
+        s.tabs[1].selected = 7;
+        s.tabs[1].next_page = Some("next".to_string());
+        s.active_tab = 1;
+
+        // "b" moves to the front, gets a new balance, and "c" is new.
+        s.set_accounts(vec![
+            account("b", 999),
+            account("c", 300),
+            account("a", 100),
+        ]);
+
+        let ids: Vec<_> = s.tabs.iter().map(|t| t.account.id.as_str()).collect();
+        assert_eq!(ids, ["b", "c", "a"]);
+        assert_eq!(s.active_tab, 0, "active tab should follow account b");
+        assert_eq!(s.tabs[0].selected, 7);
+        assert_eq!(s.tabs[0].next_page.as_deref(), Some("next"));
+        assert_eq!(s.tabs[0].account.balance.value_in_base_units, 999);
+        assert_eq!(s.tabs[1].selected, 0);
+    }
+
+    #[test]
+    fn set_accounts_resets_active_tab_if_its_account_is_gone() {
+        let mut s = state();
+        s.set_accounts(vec![account("a", 100), account("b", 200)]);
+        s.active_tab = 1;
+        s.set_accounts(vec![account("a", 100)]);
+        assert_eq!(s.active_tab, 0);
+        assert_eq!(s.tab_index("b"), None);
     }
 }

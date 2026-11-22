@@ -44,8 +44,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 
 `AppState` (`src/app/state.rs`) holds:
 
-- `accounts` — list of accounts from the API
-- `tabs` — one `TabState` per account, at the same index as in `accounts`
+- `tabs` — one `TabState` per account, in API order
 - `active_tab` — currently selected tab index
 - `mode` — `AppMode::Normal`, or `AppMode::Theme(ThemeSelectorState)` while the theme picker is open
 - `accounts_generation` — incremented for every accounts fetch; stale `AccountsLoaded` results are dropped
@@ -57,6 +56,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 
 `TabState` holds:
 
+- `account` — the `Account` this tab shows (name, balance)
 - `transactions` — `None` until the first successful load
 - `selected` — index into `transactions`. Invariant: `selected < transactions.len()` (or 0 when empty). Always replace the list via `set_transactions()`, which keeps the same transaction selected (by `id`) when it is still present and clamps otherwise.
 - `loading` — `Option<LoadKind>`: `Replace` (initial load/refresh) or `Append` (next page)
@@ -64,7 +64,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `next_page` — URL of the next page of transactions, if any
 - `list_state` — ratatui `ListState`, used for scrolling
 
-`set_accounts()` keeps the `TabState` of accounts that still exist (matched by account id) and keeps the active tab on the same account.
+`set_accounts()` keeps the `TabState` of accounts that still exist (matched by account id, with the account data such as the balance updated) and keeps the active tab on the same account.
 
 ### Loading, Refresh and Pagination
 
@@ -167,7 +167,7 @@ All code must pass `cargo clippy --workspace` with zero warnings before being co
 
 Run `cargo fmt --all` after making changes to ensure consistent formatting across the workspace.
 
-Run `cargo test` after making changes. Unit tests live alongside the code in `#[cfg(test)]` modules (currently the description truncation in `src/ui/transaction_list.rs`). CI runs `cargo test --workspace` and `cargo clippy --workspace -- -D warnings`.
+Run `cargo test` after making changes. Unit tests live alongside the code in `#[cfg(test)]` modules (e.g. `src/app/state.rs`, `src/ui/transaction_list.rs`). `app::state::tests` has helpers for building test fixtures. CI runs `cargo test --workspace` and `cargo clippy --workspace -- -D warnings`.
 
 ## Error Handling
 

@@ -9,8 +9,9 @@ pub fn draw_tabs(buf: &mut Buffer, area: Rect, state: &AppState) {
     let accent = state.theme.color(tokens::ACCENT_PRIMARY).into();
 
     let titles: Vec<Line> = state
-        .accounts
+        .tabs
         .iter()
+        .map(|tab| &tab.account)
         .map(|acc| {
             let balance = format_balance(&acc.balance.value);
             Line::from(format!(" {} {} ", acc.display_name, balance))
