@@ -13,33 +13,19 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     let secondary = state.theme.color(tokens::TEXT_SECONDARY).into();
     let warning = state.theme.color(tokens::WARNING).into();
     let success = state.theme.color(tokens::SUCCESS).into();
-    let border = state.theme.color(tokens::BORDER_FOCUSED);
 
-    let base_style = Style::default().fg(fg).bg(bg);
+    let block = Block::default()
+        .title(" Detail ")
+        .style(Style::default().fg(fg).bg(bg))
+        .padding(Padding::uniform(1));
 
-    let tab = match state.current_tab() {
-        Some(t) => t,
-        None => {
-            let block = Block::default().title(" Detail ").style(border);
-            block.render(area, buf);
-            return;
-        }
-    };
-
-    let txn = match &tab.transactions {
-        Some(txns) => match txns.get(tab.selected) {
-            Some(t) => t,
-            None => {
-                let block = Block::default().title(" Detail ").style(border);
-                block.render(area, buf);
-                return;
-            }
-        },
-        None => {
-            let block = Block::default().title(" Detail ").style(border);
-            block.render(area, buf);
-            return;
-        }
+    let Some(txn) = state
+        .current_tab()
+        .and_then(|tab| tab.transactions.as_ref()?.get(tab.selected))
+    else {
+        // No transaction selected (nothing loaded yet, or an empty list).
+        block.render(area, buf);
+        return;
     };
 
     let label_style = Style::default().fg(secondary).add_modifier(Modifier::BOLD);
@@ -64,13 +50,13 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     } else {
         success
     };
-    lines.push(Line::from(vec![
-        Span::styled("Amount:       ", label_style),
-        Span::styled(
-            txn.amount.format_display(),
-            Style::default().fg(amount_color),
-        ),
-    ]));
+    add_field(
+        &mut lines,
+        "Amount",
+        &txn.amount.format_display(),
+        label_style,
+        Style::default().fg(amount_color),
+    );
 
     let (text, style) = match txn.status {
         TransactionStatus::Held => ("Pending", warning),
@@ -82,13 +68,16 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         add_field(&mut lines, "Type", txn_type, label_style, value_style);
     }
 
+    let format_time = |ts: &jiff::Timestamp| {
+        ts.to_zoned_datetime(state.tz.clone())
+            .strftime("%Y-%m-%d %H:%M:%S")
+            .to_string()
+    };
+
     add_field(
         &mut lines,
         "Created",
-        &txn.created_at
-            .to_zoned_datetime(state.tz.clone())
-            .strftime("%Y-%m-%d %H:%M:%S")
-            .to_string(),
+        &format_time(&txn.created_at),
         label_style,
         value_style,
     );
@@ -97,10 +86,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         add_field(
             &mut lines,
             "Settled",
-            &settled
-                .to_zoned_datetime(state.tz.clone())
-                .strftime("%Y-%m-%d %H:%M:%S")
-                .to_string(),
+            &format_time(settled),
             label_style,
             value_style,
         );
@@ -200,20 +186,17 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         );
     }
 
-    if txn.category.is_some() || txn.parent_category.is_some() {
-        let display = match (&txn.parent_category, &txn.category) {
-            (Some(parent), Some(cat)) => {
-                format!(
-                    "{} / {}",
-                    state.category_name(parent),
-                    state.category_name(cat)
-                )
-            }
-            (None, Some(cat)) => state.category_name(cat).to_string(),
-            (Some(parent), None) => state.category_name(parent).to_string(),
-            (None, None) => unreachable!(),
-        };
-        add_field(&mut lines, "Category", &display, label_style, value_style);
+    let category = match (&txn.parent_category, &txn.category) {
+        (Some(parent), Some(cat)) => Some(format!(
+            "{} / {}",
+            state.category_name(parent),
+            state.category_name(cat)
+        )),
+        (Some(id), None) | (None, Some(id)) => Some(state.category_name(id).to_string()),
+        (None, None) => None,
+    };
+    if let Some(category) = category {
+        add_field(&mut lines, "Category", &category, label_style, value_style);
     }
 
     if !txn.tags.is_empty() {
@@ -227,16 +210,15 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     }
 
     let paragraph = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .title(" Detail ")
-                .style(base_style)
-                .padding(Padding::uniform(1)),
-        )
+        .block(block)
         .wrap(Wrap { trim: false });
 
     paragraph.render(area, buf);
 }
+
+/// Width of the label column: the longest label ("Foreign Amount"), its colon, and
+/// a space before the value.
+const LABEL_WIDTH: usize = 16;
 
 fn add_field(
     lines: &mut Vec<Line<'_>>,
@@ -245,11 +227,7 @@ fn add_field(
     label_style: Style,
     value_style: Style,
 ) {
-    let padded_label = format!(
-        "{label}:{:>pad$}",
-        "",
-        pad = 13usize.saturating_sub(label.len())
-    );
+    let padded_label = format!("{:<LABEL_WIDTH$}", format!("{label}:"));
     lines.push(Line::from(vec![
         Span::styled(padded_label, label_style),
         Span::styled(value.to_string(), value_style),
