@@ -49,7 +49,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `mode` — `AppMode::Normal`, or `AppMode::Theme(ThemeSelectorState)` while the theme picker is open
 - `accounts_generation` — incremented for every accounts fetch; stale `AccountsLoaded` results are dropped
 - `categories` — cached `HashMap<String, String>` mapping category IDs to display names, fetched once on startup via `GET /categories`
-- `theme` — the current `opaline::Theme`
+- `theme` — the current theme, an `Arc<opaline::Theme>` that is always opaline's global theme (`opaline::current()`); see Theming
 - `tz` — the local `jiff` time zone, looked up once at startup; used for displaying times and grouping transactions by day (don't call `TimeZone::system()` elsewhere)
 - `show_detail` — whether the detail pane is visible
 - `page_size` — how many transactions fit in the list view (computed from the list block's inner area, 2 rows per item); written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
@@ -76,7 +76,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 
 ### Toasts
 
-Status messages (loading, success, errors) are shown as toasts in the top-right corner via `ratatui-toaster`. The toaster's built-in auto-hide is not used (no `action_tx`; the engine is `ToastEngine<()>`), because each of its timers hides whichever toast is current. Instead `App::toast()` shows the toast directly, assigns it an id, and spawns a 3-second timer that sends `ToastExpired(id)`; only the most recent toast's timer hides it. Toast positions are computed when a toast is shown, so `App::render_toasts()` (called on every render) re-shows the visible toast when the screen size changes. The toast engine is private to `App`; use `info()`/`success()`/`error()` to show toasts.
+Status messages (loading, success, errors) are shown as toasts in the top-right corner via `ratatui-toaster`. The toaster's built-in auto-hide is not used (no `action_tx`; the engine is `ToastEngine<()>`), because each of its timers hides whichever toast is current. Instead `App::toast()` shows the toast directly, assigns it an id, and spawns a 3-second timer that sends `ToastExpired(id)`; only the most recent toast's timer hides it. Toast positions are computed when a toast is shown, so `App::render_toasts()` (called on every render) re-shows the visible toast when the screen size changes. The toast engine is only used to lay toasts out; `App::render_toasts()` draws them with `ui::toast::draw_toast()`, because the toaster's own rendering has hardcoded colours. The toast engine is private to `App`; use `info()`/`success()`/`error()` to show toasts.
 
 ### Rendering
 
@@ -105,6 +105,7 @@ src/
     transaction_list.rs  Transaction list grouped by day, description truncation
     transaction_detail.rs  Detail pane with full transaction info
     status_bar.rs      Keybinding hints
+    toast.rs           Toast drawing in theme colours
 ```
 
 ## API Layer
@@ -144,19 +145,24 @@ Key handling lives in `App::handle_normal_key` and `App::handle_key` (which dele
 
 ## Theming
 
-Powered by the `opaline` crate (with its `widgets` feature, for the `ThemeSelector` picker). The initial theme comes from the config `theme` field (an opaline builtin id), defaulting to opaline's default theme. `t` opens the picker to choose any builtin theme at runtime; the choice is not saved to the config file. If the selected theme fails to load, an error toast is shown and the current theme is kept.
+Powered by the `opaline` crate (with its `widgets` feature, for the `ThemeSelector` picker). The initial theme comes from the config `theme` field (an opaline builtin id), defaulting to opaline's default theme. `t` opens the picker to choose any builtin theme at runtime; the choice is not saved to the config file.
 
-All UI modules read colors from `state.theme` via semantic tokens (`opaline::names::tokens`) — no hardcoded colors. Tokens in use:
+The picker (`ThemeSelector`) draws itself with opaline's *global* theme, and previews the highlighted theme by changing it (restoring the original on `Esc`). So `AppState::new` makes the configured theme the global one, and after every key in theme mode `state.theme` is set back to `opaline::current()`: the picker and the rest of the UI always use the same theme, and the whole UI previews the highlighted theme. Don't set `state.theme` without also calling `opaline::set_theme`.
+
+All UI modules read colors from `state.theme` via semantic tokens (`opaline::names::tokens`) — no hardcoded colors, and nothing drawn by a third-party widget with its own colours. Use `theme.color(token)`; `theme.line()`/`span()`/`style()` take opaline *style* names (`opaline::names::styles`), not tokens, and silently return an unstyled result for an unknown name. Tokens in use:
 
 - `BG_BASE` / `TEXT_PRIMARY` — base background and foreground
 - `BG_PANEL` — transaction list background; `BG_CODE` — detail pane background
+- `BORDER_UNFOCUSED` — the detail pane's left border, which separates it from the list (many themes use the same colour for `BG_PANEL` and `BG_CODE`)
+- `BG_ELEVATED` — toast and theme picker backgrounds
 - `BG_SELECTION` — selected row background
-- `ACCENT_PRIMARY` — active tab, list title, selection marker
+- `ACCENT_PRIMARY` — active tab, list and detail pane titles, selection marker
 - `TEXT_MUTED` — inactive tabs; `TEXT_DIM` — day separators, times, status bar text
 - `TEXT_SECONDARY` — field labels in the detail pane
-- `SUCCESS` — positive amounts, settled status; `CODE_NUMBER` — negative amounts in the list
-- `WARNING` — pending (held) status
+- Amounts: `TEXT_PRIMARY` for debits, `SUCCESS` for credits
+- `SUCCESS` / `WARNING` — settled / pending (held) status
 - `INFO` — keybinding hints in the status bar
+- `INFO` / `SUCCESS` / `WARNING` / `ERROR` — toast borders, by toast type
 
 ## Dependencies
 
@@ -174,6 +180,5 @@ Run `cargo test` after making changes. Unit tests live alongside the code in `#[
 
 - **Config errors**: Returned from `main()` and printed to stderr before entering TUI mode.
 - **API/network errors**: Shown as error toasts. The app remains usable with stale data; `r` retries.
-- **Theme load errors**: Shown as an error toast; the current theme is kept.
 - **Terminal input errors**: `run()` returns the error, the terminal is restored, and the app exits.
 - **Panics**: The panic hook installed by `ratatui::init()` restores the terminal.

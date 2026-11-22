@@ -1,4 +1,4 @@
-use opaline::names::tokens::{self, ACCENT_PRIMARY};
+use opaline::names::tokens;
 use ratatui::{
     prelude::*,
     widgets::{Block, HighlightSpacing, List, ListItem, Padding},
@@ -101,7 +101,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let list = List::new(items)
         .block(block(title))
         .highlight_style(Style::default().bg(selection).add_modifier(Modifier::BOLD))
-        .highlight_symbol(state.theme.line(ACCENT_PRIMARY, "▎ "))
+        .highlight_symbol(Line::styled("▎ ", accent))
         .highlight_spacing(HighlightSpacing::Always)
         .repeat_highlight_symbol(true);
 
@@ -126,8 +126,9 @@ fn build_transaction_item<'a>(
     // Right-align the amount, measuring in terminal columns (not bytes or chars).
     let padding = inner_width.saturating_sub(truncated_desc.width() + amount_width);
 
+    // Debits in the normal text colour, credits highlighted (as in the detail pane).
     let amount_style = if txn.amount.is_negative() {
-        palette.color(tokens::CODE_NUMBER)
+        palette.color(tokens::TEXT_PRIMARY)
     } else {
         palette.color(tokens::SUCCESS)
     };
@@ -167,8 +168,32 @@ fn truncate_to_width(s: &str, max_width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::truncate_to_width;
-    use unicode_width::UnicodeWidthStr;
+    use super::*;
+    use crate::app::state::{
+        TabState,
+        tests::{account, txn},
+    };
+
+    #[test]
+    fn selected_row_is_marked_in_the_accent_colour() {
+        let mut state = AppState::new(None);
+        state.tz = jiff::tz::TimeZone::UTC;
+        let mut tab = TabState::new(account("a", 0));
+        tab.set_transactions(vec![txn("t0", "2026-11-20T18:00:00Z")], None);
+        state.tabs.push(tab);
+
+        let area = Rect::new(0, 0, 40, 10);
+        let mut buf = Buffer::empty(area);
+        draw_transaction_list(&mut buf, area, &mut state);
+
+        // Row 1 is the top padding, row 2 the day separator, row 3 the transaction.
+        let marker = &buf[(1, 3)];
+        assert_eq!(marker.symbol(), "▎");
+        assert_eq!(
+            marker.fg,
+            Color::from(state.theme.color(tokens::ACCENT_PRIMARY))
+        );
+    }
 
     #[test]
     fn short_strings_are_unchanged() {

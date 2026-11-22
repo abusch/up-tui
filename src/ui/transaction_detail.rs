@@ -1,7 +1,7 @@
 use opaline::names::tokens;
 use ratatui::{
     prelude::*,
-    widgets::{Block, Padding, Paragraph, Wrap},
+    widgets::{Block, Borders, Padding, Paragraph, Wrap},
 };
 
 use crate::app::state::AppState;
@@ -14,8 +14,13 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     let warning = state.theme.color(tokens::WARNING).into();
     let success = state.theme.color(tokens::SUCCESS).into();
 
+    // The left border separates the pane from the list: in many themes `BG_CODE` is
+    // the same colour as the list's `BG_PANEL`.
     let block = Block::default()
         .title(" Detail ")
+        .title_style(state.theme.color(tokens::ACCENT_PRIMARY))
+        .borders(Borders::LEFT)
+        .border_style(state.theme.color(tokens::BORDER_UNFOCUSED))
         .style(Style::default().fg(fg).bg(bg))
         .padding(Padding::uniform(1));
 

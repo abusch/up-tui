@@ -65,4 +65,4 @@ Or build from source with `cargo run`.
 | `t`                    | Open the theme picker                    |
 | `q` / `Ctrl+C`         | Quit                                     |
 
-In the theme picker, use `Up` / `Down` to move, type to filter, `Enter` to apply the theme, and `Esc` to close without changing it. The chosen theme isn't saved; set `theme` in the config file to make it permanent.
+In the theme picker, use `Up` / `Down` to move (the whole UI previews the highlighted theme), type to filter, `Enter` to apply the theme, and `Esc` to close without changing it. The chosen theme isn't saved; set `theme` in the config file to make it permanent.

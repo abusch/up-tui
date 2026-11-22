@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use opaline::{ThemeSelectorAction, ThemeSelectorState, load_by_name};
+use opaline::{ThemeSelectorAction, ThemeSelectorState};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, layout::Rect};
 use ratatui_toaster::{
@@ -164,19 +164,19 @@ impl App {
     fn handle_key(&mut self, key: KeyEvent) {
         match self.state.mode {
             AppMode::Normal => self.handle_normal_key(key),
-            AppMode::Theme(ref mut state) => match state.handle_key(key) {
-                ThemeSelectorAction::Cancel => self.state.mode = AppMode::Normal,
-                ThemeSelectorAction::Select(new_theme) => {
+            AppMode::Theme(ref mut selector) => {
+                let action = selector.handle_key(key);
+                // The picker previews the highlighted theme (and applies the chosen one,
+                // or restores the original on Esc) by setting opaline's global theme.
+                // Follow it, so the whole UI shows the preview.
+                self.state.theme = opaline::current();
+                if matches!(
+                    action,
+                    ThemeSelectorAction::Select(_) | ThemeSelectorAction::Cancel
+                ) {
                     self.state.mode = AppMode::Normal;
-                    match load_by_name(&new_theme) {
-                        Some(theme) => self.state.theme = theme,
-                        None => self.error(format!("Failed to load theme \"{new_theme}\"")),
-                    }
                 }
-                ThemeSelectorAction::Navigate
-                | ThemeSelectorAction::FilterChanged
-                | ThemeSelectorAction::Noop => {}
-            },
+            }
         }
     }
 
@@ -234,7 +234,7 @@ impl App {
                 self.fetch_transactions(idx, LoadKind::Replace, None, true);
             }
             KeyCode::Char('t') => {
-                self.state.mode = AppMode::Theme(ThemeSelectorState::default());
+                self.state.mode = AppMode::Theme(ThemeSelectorState::with_current_selected());
             }
             _ => {}
         }
@@ -366,8 +366,17 @@ impl App {
                 self.toaster.show_toast(toast_builder(msg.clone(), *typ));
             }
         }
-        if self.toaster.has_toast() {
-            self.toaster.render(area, buf);
+        // The toaster is only used for layout: its own rendering has hardcoded colours.
+        if self.toaster.has_toast()
+            && let Some((msg, typ)) = &self.last_toast
+        {
+            crate::ui::toast::draw_toast(
+                buf,
+                self.toaster.toast_area(),
+                msg,
+                *typ,
+                &self.state.theme,
+            );
         }
     }
 

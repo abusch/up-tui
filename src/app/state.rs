@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use jiff::{civil::Date, tz::TimeZone};
 use opaline::ThemeSelectorState;
@@ -173,7 +174,10 @@ pub struct AppState {
     /// Incremented for every accounts fetch; stale results are dropped.
     pub accounts_generation: u64,
     pub categories: HashMap<String, String>,
-    pub theme: opaline::Theme,
+    /// The theme everything is drawn with. Always opaline's global theme
+    /// (`opaline::current()`), which the theme picker draws with and changes to
+    /// preview themes, so the picker and the rest of the UI always match.
+    pub theme: Arc<opaline::Theme>,
     /// Local time zone used to display times and group transactions by day.
     /// Looked up once at startup.
     pub tz: TimeZone,
@@ -186,7 +190,13 @@ pub struct AppState {
 impl AppState {
     /// Create the initial state. `theme_name` is an opaline theme id; if it's `None`
     /// (or fails to load) opaline's default theme is used.
+    /// It also becomes opaline's global theme.
     pub fn new(theme_name: Option<&str>) -> Self {
+        opaline::set_theme(
+            theme_name
+                .and_then(opaline::load_by_name)
+                .unwrap_or_default(),
+        );
         AppState {
             tabs: Vec::new(),
             active_tab: 0,
@@ -194,9 +204,7 @@ impl AppState {
             should_quit: false,
             accounts_generation: 0,
             categories: HashMap::new(),
-            theme: theme_name
-                .and_then(opaline::load_by_name)
-                .unwrap_or_default(),
+            theme: opaline::current(),
             tz: TimeZone::system(),
             show_detail: false,
             page_size: 0,

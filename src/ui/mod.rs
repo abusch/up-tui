@@ -1,5 +1,6 @@
 pub mod status_bar;
 pub mod tabs;
+pub mod toast;
 pub mod transaction_detail;
 pub mod transaction_list;
 
@@ -50,8 +51,10 @@ impl Widget for &mut App {
         if let AppMode::Theme(ref mut state) = self.state.mode {
             let centered_area = area.centered(Constraint::Ratio(2, 3), Constraint::Ratio(3, 4));
             Clear.render(centered_area, buf);
+            // The picker sets only foreground colours, so give it a popup background.
+            let popup_bg = self.state.theme.color(tokens::BG_ELEVATED).into();
             Block::new()
-                .style(Style::default().bg(bg))
+                .style(Style::default().bg(popup_bg).fg(fg))
                 .render(centered_area, buf);
             ThemeSelector::new()
                 .title("Theme")
