@@ -5,7 +5,9 @@ use ratatui::{
     widgets::{Block, HighlightSpacing, List, ListItem, Padding},
 };
 
-use crate::app::state::AppState;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+use crate::app::state::{AppState, LoadKind};
 use crate::client::models::Transaction;
 
 pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState) {
@@ -22,16 +24,16 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
 
     let title;
     let transactions = match state.current_tab() {
-        Some(tab) if tab.loading && tab.transactions.is_none() => {
+        Some(tab) if tab.loading.is_some() && tab.transactions.is_none() => {
             title = " Transactions - Loading... ";
             None
         }
         Some(tab) => match &tab.transactions {
             Some(txns) if !txns.is_empty() => {
-                title = if tab.loading {
-                    " Transactions - Refreshing... "
-                } else {
-                    " Transactions "
+                title = match tab.loading {
+                    Some(LoadKind::Replace) => " Transactions - Refreshing... ",
+                    Some(LoadKind::Append) => " Transactions - Loading more... ",
+                    None => " Transactions ",
                 };
                 Some(txns)
             }
@@ -63,7 +65,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
         }
     };
 
-    // 2 for borders + 2 for highlight symbol ("▎ ")
+    // 2 for horizontal padding + 2 for highlight symbol ("▎ ")
     let inner_width = area.width.saturating_sub(4) as usize;
     let tz = TimeZone::system();
 
@@ -121,19 +123,12 @@ fn build_transaction_item<'a>(
 ) -> ListItem<'a> {
     let time = zdt.strftime("%H:%M").to_string();
     let amount = txn.amount.format_display();
-    let amount_len = amount.len();
-    let max_desc_len = inner_width.saturating_sub(amount_len + 1);
-
-    let desc = &txn.description;
-    let truncated_desc: String = if desc.chars().count() > max_desc_len {
-        let mut s: String = desc.chars().take(max_desc_len.saturating_sub(1)).collect();
-        s.push('…');
-        s
-    } else {
-        desc.clone()
-    };
-
-    let padding = inner_width.saturating_sub(truncated_desc.len() + amount_len + 1);
+    let amount_width = amount.width();
+    // Leave at least one column between the description and the amount.
+    let max_desc_width = inner_width.saturating_sub(amount_width + 1);
+    let truncated_desc = truncate_to_width(&txn.description, max_desc_width);
+    // Right-align the amount, measuring in terminal columns (not bytes or chars).
+    let padding = inner_width.saturating_sub(truncated_desc.width() + amount_width);
 
     let amount_style = if txn.amount.value_in_base_units >= 0 {
         palette.color(tokens::SUCCESS)
@@ -149,4 +144,60 @@ fn build_transaction_item<'a>(
     let line2 = Line::from(Span::styled(time, palette.color(tokens::TEXT_DIM)));
 
     ListItem::new(Text::from(vec![line1, line2]))
+}
+
+/// Truncate `s` to at most `max_width` terminal columns, appending `…` if anything was cut.
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    if s.width() <= max_width {
+        return s.to_string();
+    }
+    if max_width == 0 {
+        return String::new();
+    }
+    let budget = max_width - 1; // reserve one column for the ellipsis
+    let mut out = String::new();
+    let mut width = 0;
+    for c in s.chars() {
+        let w = c.width().unwrap_or(0);
+        if width + w > budget {
+            break;
+        }
+        out.push(c);
+        width += w;
+    }
+    out.push('…');
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_to_width;
+    use unicode_width::UnicodeWidthStr;
+
+    #[test]
+    fn short_strings_are_unchanged() {
+        assert_eq!(truncate_to_width("Café", 10), "Café");
+        assert_eq!(truncate_to_width("Café", 4), "Café");
+    }
+
+    #[test]
+    fn truncation_fits_width_exactly() {
+        let s = truncate_to_width("Woolworths Metro", 8);
+        assert_eq!(s, "Woolwor…");
+        assert_eq!(s.width(), 8);
+    }
+
+    #[test]
+    fn multibyte_and_wide_characters_are_measured_in_columns() {
+        assert_eq!(truncate_to_width("Café Allongé", 6), "Café …");
+        // Each CJK character is 2 columns wide; a split one is dropped, not cut in half.
+        let s = truncate_to_width("寿司寿司", 6);
+        assert_eq!(s, "寿司…");
+        assert!(s.width() <= 6);
+    }
+
+    #[test]
+    fn zero_width_yields_empty() {
+        assert_eq!(truncate_to_width("abc", 0), "");
+    }
 }

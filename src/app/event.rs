@@ -1,10 +1,9 @@
-use crossterm::event::{Event, EventStream, KeyEvent};
+use crossterm::event::{Event, EventStream, KeyEvent, KeyEventKind};
 use futures::StreamExt;
-use ratatui_toaster::{ToastBuilder, ToastMessage};
 use rootcause::Result;
 use tokio::sync::mpsc;
 
-use crate::client::models::{Account, Transaction};
+use crate::client::models::{Account, PaginatedResponse, Transaction};
 
 pub enum AppEvent {
     Key(KeyEvent),
@@ -12,32 +11,21 @@ pub enum AppEvent {
     Resize,
     /// Reading terminal input failed (or the input stream ended). Fatal.
     InputError(std::io::Error),
-    AccountsLoaded(Result<Vec<Account>>),
+    AccountsLoaded {
+        /// Matches `AppState::accounts_generation` unless superseded by a later fetch.
+        generation: u64,
+        result: Result<Vec<Account>>,
+    },
     TransactionsLoaded {
-        tab_index: usize,
-        result: Result<Vec<Transaction>>,
+        /// Identifies the tab by account, since tab indices can shift when accounts reload.
+        account_id: String,
+        /// Matches `TabState::generation` unless superseded by a later fetch.
+        generation: u64,
+        result: Result<PaginatedResponse<Transaction>>,
     },
     CategoriesLoaded(Result<Vec<(String, String)>>),
-    ToastShow(ToastBuilder),
-    ToastHide,
-}
-
-impl From<ToastMessage> for AppEvent {
-    fn from(value: ToastMessage) -> Self {
-        match value {
-            ToastMessage::Show {
-                message,
-                toast_type,
-                position,
-            } => Self::ToastShow(
-                ToastBuilder::new(message.into())
-                    .toast_type(toast_type)
-                    .position(position)
-                    .constraint(ratatui_toaster::ToastConstraint::Auto),
-            ),
-            ToastMessage::Hide => Self::ToastHide,
-        }
-    }
+    /// The display timer for the toast with this id has run out.
+    ToastExpired(u64),
 }
 
 pub fn spawn_event_reader(tx: mpsc::Sender<AppEvent>) {
@@ -45,7 +33,11 @@ pub fn spawn_event_reader(tx: mpsc::Sender<AppEvent>) {
         let mut events = EventStream::new();
         loop {
             let app_event = match events.next().await {
-                Some(Ok(Event::Key(key))) => AppEvent::Key(key),
+                // Ignore key releases, which some platforms (e.g. Windows) report in
+                // addition to presses; otherwise every key would be handled twice.
+                Some(Ok(Event::Key(key))) if key.kind != KeyEventKind::Release => {
+                    AppEvent::Key(key)
+                }
                 Some(Ok(Event::Resize(..))) => AppEvent::Resize,
                 Some(Ok(_)) => continue,
                 Some(Err(e)) => AppEvent::InputError(e),

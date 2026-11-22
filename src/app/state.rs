@@ -12,10 +12,25 @@ pub enum AppMode {
     Theme(ThemeSelectorState),
 }
 
+/// What kind of transaction fetch is in flight for a tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadKind {
+    /// Initial load or refresh: the result replaces the list.
+    Replace,
+    /// Next page: the result is appended to the list.
+    Append,
+}
+
 pub struct TabState {
     pub transactions: Option<Vec<Transaction>>,
     pub selected: usize,
-    pub loading: bool,
+    /// The fetch currently in flight, if any.
+    pub loading: Option<LoadKind>,
+    /// Incremented for every fetch started. Results carrying an older value were
+    /// superseded by a later fetch and are dropped.
+    pub generation: u64,
+    /// URL of the next page of transactions, if there are more to load.
+    pub next_page: Option<String>,
     pub list_state: ListState,
 }
 
@@ -24,16 +39,25 @@ impl TabState {
         TabState {
             transactions: None,
             selected: 0,
-            loading: false,
+            loading: None,
+            generation: 0,
+            next_page: None,
             list_state: ListState::default(),
         }
+    }
+
+    /// Mark a new fetch as started and return its generation.
+    pub fn start_load(&mut self, kind: LoadKind) -> u64 {
+        self.generation += 1;
+        self.loading = Some(kind);
+        self.generation
     }
 
     /// Replace the transaction list, keeping the same transaction selected if it is
     /// still present, and otherwise clamping the selection to the new list's bounds.
     /// This maintains the invariant `selected < transactions.len()` (or 0 if empty)
     /// that the navigation handlers rely on.
-    pub fn set_transactions(&mut self, transactions: Vec<Transaction>) {
+    pub fn set_transactions(&mut self, transactions: Vec<Transaction>, next_page: Option<String>) {
         let selected_id = self
             .transactions
             .as_ref()
@@ -43,6 +67,22 @@ impl TabState {
             .and_then(|id| transactions.iter().position(|t| t.id == id))
             .unwrap_or_else(|| self.selected.min(transactions.len().saturating_sub(1)));
         self.transactions = Some(transactions);
+        self.next_page = next_page;
+    }
+
+    /// Append a further page of transactions. The selection is unaffected.
+    pub fn append_transactions(&mut self, more: Vec<Transaction>, next_page: Option<String>) {
+        self.transactions.get_or_insert_with(Vec::new).extend(more);
+        self.next_page = next_page;
+    }
+
+    /// Whether the next page should be fetched: there is one, nothing is loading, and
+    /// the selection is within `lookahead` rows of the end of the loaded list.
+    pub fn wants_next_page(&self, lookahead: usize) -> bool {
+        match (&self.transactions, &self.next_page, self.loading) {
+            (Some(txns), Some(_), None) => self.selected + lookahead.max(1) >= txns.len(),
+            _ => false,
+        }
     }
 }
 
@@ -53,6 +93,8 @@ pub struct AppState {
     #[allow(dead_code)]
     pub mode: AppMode,
     pub should_quit: bool,
+    /// Incremented for every accounts fetch; stale results are dropped.
+    pub accounts_generation: u64,
     pub categories: HashMap<String, String>,
     pub theme: opaline::Theme,
     pub config: Config,
@@ -70,6 +112,7 @@ impl AppState {
             active_tab: 0,
             mode: AppMode::Normal,
             should_quit: false,
+            accounts_generation: 0,
             categories: HashMap::new(),
             theme: config
                 .theme
@@ -82,10 +125,29 @@ impl AppState {
         }
     }
 
+    /// Replace the account list. Tabs for accounts that still exist keep their loaded
+    /// transactions and selection, and the active tab stays on the same account.
     pub fn set_accounts(&mut self, accounts: Vec<Account>) {
-        self.tabs = accounts.iter().map(|_| TabState::new()).collect();
+        let active_id = self.accounts.get(self.active_tab).map(|a| a.id.clone());
+        let mut old_tabs: HashMap<String, TabState> = self
+            .accounts
+            .drain(..)
+            .map(|a| a.id)
+            .zip(self.tabs.drain(..))
+            .collect();
+        self.tabs = accounts
+            .iter()
+            .map(|a| old_tabs.remove(&a.id).unwrap_or_else(TabState::new))
+            .collect();
+        self.active_tab = active_id
+            .and_then(|id| accounts.iter().position(|a| a.id == id))
+            .unwrap_or(0);
         self.accounts = accounts;
-        self.active_tab = 0;
+    }
+
+    /// Index of the tab showing the given account.
+    pub fn tab_index(&self, account_id: &str) -> Option<usize> {
+        self.accounts.iter().position(|a| a.id == account_id)
     }
 
     pub fn current_tab(&self) -> Option<&TabState> {

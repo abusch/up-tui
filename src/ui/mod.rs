@@ -45,8 +45,8 @@ impl Widget for &mut App {
 
         status_bar::draw_status_bar(buf, chunks[2], &self.state);
 
+        self.update_toast_area(area);
         if self.toaster.has_toast() {
-            self.toaster.set_area(area);
             self.toaster.render(area, buf);
         }
 

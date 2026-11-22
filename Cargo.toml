@@ -33,6 +33,8 @@ tokio = {
     "macros",
     "net",
     "rt",
+    "time",
   ]
 }
 toml = "1.2.2"
+unicode-width = "0.2.3"

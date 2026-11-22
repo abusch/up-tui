@@ -55,5 +55,18 @@ pub fn load_config() -> Result<Config> {
     if config.api_token.is_empty() {
         bail!("api_token is empty in {}", path.display());
     }
+    if let Some(theme) = &config.theme
+        && opaline::load_by_name(theme).is_none()
+    {
+        let available: Vec<String> = opaline::list_available_themes()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        bail!(
+            "Unknown theme \"{theme}\" in {}\n\nAvailable themes: {}",
+            path.display(),
+            available.join(", ")
+        );
+    }
     Ok(config)
 }

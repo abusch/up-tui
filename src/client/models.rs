@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use jiff::Timestamp;
 use serde::Deserialize;
 
@@ -15,7 +13,6 @@ pub struct JsonApiResponse<T> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaginationLinks {
-    pub prev: Option<String>,
     pub next: Option<String>,
 }
 
@@ -197,16 +194,6 @@ impl Default for PaginationOptions {
 pub struct PaginatedResponse<T> {
     pub data: Vec<T>,
     pub next_page_url: Option<String>,
-}
-
-impl<T> PaginatedResponse<T> {
-    /// Returns `PaginationOptions` to fetch the next page, or `None` if there is no next page.
-    pub fn next_page(&self) -> Option<PaginationOptions> {
-        self.next_page_url.as_ref().map(|url| PaginationOptions {
-            next_url: Some(url.clone()),
-            ..Default::default()
-        })
-    }
 }
 
 // --- Domain structs (flattened from Resource) ---

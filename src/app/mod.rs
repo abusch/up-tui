@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jiff::tz::TimeZone;
@@ -11,7 +12,7 @@ use ratatui_toaster::{
 use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
-use crate::app::state::AppMode;
+use crate::app::state::{AppMode, LoadKind};
 use crate::{
     app::{
         event::{AppEvent, spawn_event_reader},
@@ -29,21 +30,39 @@ pub struct App {
     pub state: AppState,
     tx: mpsc::Sender<AppEvent>,
     rx: mpsc::Receiver<AppEvent>,
-    pub toaster: ToastEngine<AppEvent>,
+    // The toaster's built-in auto-hide is not used (no `action_tx`): each of its timers
+    // hides whichever toast is current, cutting later toasts short. See `toast()`.
+    pub toaster: ToastEngine<()>,
+    /// Id of the most recently shown toast; only its timer may hide it.
+    toast_id: u64,
+    /// The most recently shown toast, so it can be re-laid-out when the screen resizes.
+    last_toast: Option<(String, ToastType)>,
+    /// Screen area of the last render, used to position toasts.
+    screen_area: Rect,
+}
+
+const TOAST_DURATION: Duration = Duration::from_secs(3);
+
+fn toast_builder(msg: String, typ: ToastType) -> ToastBuilder {
+    ToastBuilder::new(msg.into())
+        .toast_type(typ)
+        .position(ToastPosition::TopRight)
+        .constraint(ToastConstraint::Auto)
 }
 
 impl App {
     pub fn new(cfg: Config) -> rootcause::Result<Self> {
         let (tx, rx) = mpsc::channel::<AppEvent>(100);
-        let toast_engine = ToastEngineBuilder::new(Rect::default())
-            .action_tx(tx.clone())
-            .build();
+        let toast_engine = ToastEngineBuilder::new(Rect::default()).build();
         Ok(Self {
             client: Arc::new(UpClient::new(&cfg.api_token)?),
             state: AppState::new(cfg),
             tx,
             rx,
             toaster: toast_engine,
+            toast_id: 0,
+            last_toast: None,
+            screen_area: Rect::default(),
         })
     }
 
@@ -52,7 +71,7 @@ impl App {
         spawn_event_reader(self.tx.clone());
 
         // Fetch accounts and categories on startup
-        self.fetch_accounts();
+        self.fetch_accounts(false);
         self.fetch_categories();
 
         self.info("Loading accounts...");
@@ -81,19 +100,21 @@ impl App {
             AppEvent::Resize => {}
             // Handled in `run`, which exits the loop.
             AppEvent::InputError(_) => {}
-            AppEvent::AccountsLoaded(result) => match result {
-                Ok(accounts) => {
-                    self.state.set_accounts(accounts);
-                    self.success("Accounts loaded");
-                    // Auto-fetch transactions for the first tab
-                    if !self.state.accounts.is_empty() {
-                        self.fetch_transactions(0);
+            AppEvent::AccountsLoaded { generation, result } => {
+                if generation != self.state.accounts_generation {
+                    return; // superseded by a later fetch
+                }
+                match result {
+                    Ok(accounts) => {
+                        self.state.set_accounts(accounts);
+                        self.success("Accounts loaded");
+                        self.ensure_transactions_loaded();
+                    }
+                    Err(e) => {
+                        self.error(format!("Failed to load accounts: {}", e));
                     }
                 }
-                Err(e) => {
-                    self.error(format!("Failed to load accounts: {}", e));
-                }
-            },
+            }
             AppEvent::CategoriesLoaded(result) => match result {
                 Ok(categories) => {
                     self.success("Categories loaded");
@@ -103,22 +124,41 @@ impl App {
                     self.error(format!("Failed to load categories: {}", e));
                 }
             },
-            AppEvent::TransactionsLoaded { tab_index, result } => {
-                if let Some(tab) = self.state.tabs.get_mut(tab_index) {
-                    tab.loading = false;
-                    match result {
-                        Ok(transactions) => {
-                            tab.set_transactions(transactions);
-                            self.success("Transactions loaded");
-                        }
-                        Err(e) => {
-                            self.error(format!("Failed to load transactions: {}", e));
-                        }
+            AppEvent::TransactionsLoaded {
+                account_id,
+                generation,
+                result,
+            } => {
+                let Some(tab) = self
+                    .state
+                    .tab_index(&account_id)
+                    .and_then(|idx| self.state.tabs.get_mut(idx))
+                else {
+                    return; // account no longer exists
+                };
+                if tab.generation != generation {
+                    return; // superseded by a later fetch
+                }
+                let kind = tab.loading.take();
+                match result {
+                    Ok(page) if kind == Some(LoadKind::Append) => {
+                        tab.append_transactions(page.data, page.next_page_url);
+                    }
+                    Ok(page) => {
+                        tab.set_transactions(page.data, page.next_page_url);
+                        self.success("Transactions loaded");
+                    }
+                    Err(e) => {
+                        self.error(format!("Failed to load transactions: {}", e));
                     }
                 }
             }
-            AppEvent::ToastShow(msg) => self.toaster.show_toast(msg),
-            AppEvent::ToastHide => self.toaster.hide_toast(),
+            AppEvent::ToastExpired(id) => {
+                if id == self.toast_id {
+                    self.toaster.hide_toast();
+                    self.last_toast = None;
+                }
+            }
         }
     }
 
@@ -128,8 +168,11 @@ impl App {
             AppMode::Theme(ref mut state) => match state.handle_key(key) {
                 ThemeSelectorAction::Cancel => self.state.mode = AppMode::Normal,
                 ThemeSelectorAction::Select(new_theme) => {
-                    self.state.theme = load_by_name(&new_theme).unwrap();
                     self.state.mode = AppMode::Normal;
+                    match load_by_name(&new_theme) {
+                        Some(theme) => self.state.theme = theme,
+                        None => self.error(format!("Failed to load theme \"{new_theme}\"")),
+                    }
                 }
                 ThemeSelectorAction::Navigate
                 | ThemeSelectorAction::FilterChanged
@@ -148,11 +191,15 @@ impl App {
             }
             KeyCode::Tab | KeyCode::Char('l') => {
                 self.state.next_tab();
-                self.maybe_fetch_transactions();
+                if self.ensure_transactions_loaded() {
+                    self.info("Loading transactions...");
+                }
             }
             KeyCode::BackTab | KeyCode::Char('h') => {
                 self.state.prev_tab();
-                self.maybe_fetch_transactions();
+                if self.ensure_transactions_loaded() {
+                    self.info("Loading transactions...");
+                }
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 if let Some(tab) = self.state.current_tab_mut()
@@ -247,14 +294,23 @@ impl App {
                 self.state.show_detail = !self.state.show_detail;
             }
             KeyCode::Char('r') => {
+                // Re-fetch accounts too: this refreshes balances, and recovers if the
+                // initial accounts load failed (in which case there are no tabs yet).
+                if self.state.accounts.is_empty() {
+                    self.info("Loading accounts...");
+                }
+                self.fetch_accounts(true);
                 let idx = self.state.active_tab;
-                self.fetch_transactions(idx);
+                self.fetch_transactions(idx, LoadKind::Replace, None, true);
             }
             KeyCode::Char('t') => {
                 self.state.mode = AppMode::Theme(ThemeSelectorState::default());
             }
             _ => {}
         }
+
+        // If navigation brought the selection near the end of what's loaded, fetch more.
+        self.maybe_fetch_next_page();
     }
 
     pub fn fetch_categories(&self) {
@@ -266,49 +322,85 @@ impl App {
         });
     }
 
-    pub fn fetch_accounts(&self) {
+    pub fn fetch_accounts(&mut self, reload: bool) {
+        self.state.accounts_generation += 1;
+        let generation = self.state.accounts_generation;
         let client = Arc::clone(&self.client);
         let tx = self.tx.clone();
         tokio::spawn(async move {
             let result = client
-                .get_accounts(PaginationOptions::default())
+                .get_accounts(PaginationOptions::default(), reload)
                 .await
                 .map(|page| page.data)
                 .map_err(Into::into);
-            let _ = tx.send(AppEvent::AccountsLoaded(result)).await;
+            let _ = tx
+                .send(AppEvent::AccountsLoaded { generation, result })
+                .await;
         });
     }
 
-    fn maybe_fetch_transactions(&mut self) {
+    /// Start loading the active tab's transactions if they haven't been loaded and
+    /// nothing is in flight. Returns whether a fetch was started.
+    fn ensure_transactions_loaded(&mut self) -> bool {
         let idx = self.state.active_tab;
         if let Some(tab) = self.state.tabs.get(idx)
             && tab.transactions.is_none()
-            && !tab.loading
+            && tab.loading.is_none()
         {
-            self.info("Loading transactions...");
-            self.fetch_transactions(idx);
+            self.fetch_transactions(idx, LoadKind::Replace, None, false);
+            true
+        } else {
+            false
         }
     }
 
-    fn fetch_transactions(&mut self, tab_index: usize) {
-        if let Some(account) = self.state.accounts.get(tab_index) {
-            if let Some(tab) = self.state.tabs.get_mut(tab_index) {
-                tab.loading = true;
-            }
-            let account_id = account.id.clone();
-            let client = Arc::clone(&self.client);
-            let tx = self.tx.clone();
-            tokio::spawn(async move {
-                let result = client
-                    .get_transactions(&account_id, PaginationOptions::default())
-                    .await
-                    .map(|page| page.data)
-                    .map_err(Into::into);
-                let _ = tx
-                    .send(AppEvent::TransactionsLoaded { tab_index, result })
-                    .await;
-            });
+    fn maybe_fetch_next_page(&mut self) {
+        let idx = self.state.active_tab;
+        let lookahead = self.state.list_height as usize;
+        if let Some(tab) = self.state.tabs.get(idx)
+            && tab.wants_next_page(lookahead)
+        {
+            let next_url = tab.next_page.clone();
+            self.fetch_transactions(idx, LoadKind::Append, next_url, false);
         }
+    }
+
+    /// Fetch transactions for a tab: the first page (`next_url == None`) or the page at
+    /// `next_url`. Any fetch already in flight for the tab is superseded.
+    fn fetch_transactions(
+        &mut self,
+        tab_index: usize,
+        kind: LoadKind,
+        next_url: Option<String>,
+        reload: bool,
+    ) {
+        let (Some(account), Some(tab)) = (
+            self.state.accounts.get(tab_index),
+            self.state.tabs.get_mut(tab_index),
+        ) else {
+            return;
+        };
+        let account_id = account.id.clone();
+        let generation = tab.start_load(kind);
+        let opts = PaginationOptions {
+            next_url,
+            ..Default::default()
+        };
+        let client = Arc::clone(&self.client);
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            let result = client
+                .get_transactions(&account_id, opts, reload)
+                .await
+                .map_err(Into::into);
+            let _ = tx
+                .send(AppEvent::TransactionsLoaded {
+                    account_id,
+                    generation,
+                    result,
+                })
+                .await;
+        });
     }
 
     /// Show a toast directly. This must not go through `self.tx`: the main loop is the
@@ -316,12 +408,33 @@ impl App {
     /// the channel is full.
     fn toast(&mut self, msg: impl Into<String>, typ: ToastType) {
         let msg: String = msg.into();
-        self.toaster.show_toast(
-            ToastBuilder::new(msg.into())
-                .toast_type(typ)
-                .position(ToastPosition::TopRight)
-                .constraint(ToastConstraint::Auto),
-        );
+        self.toaster.show_toast(toast_builder(msg.clone(), typ));
+        self.last_toast = Some((msg, typ));
+
+        // Hide it after a while, unless another toast has replaced it by then.
+        self.toast_id += 1;
+        let id = self.toast_id;
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(TOAST_DURATION).await;
+            let _ = tx.send(AppEvent::ToastExpired(id)).await;
+        });
+    }
+
+    /// Update the screen area used to position toasts. A toast's position is computed
+    /// when it's shown, so a visible toast is re-shown to lay it out for the new size.
+    /// Called on every render; this also places toasts shown before the first render.
+    pub fn update_toast_area(&mut self, area: Rect) {
+        if area == self.screen_area {
+            return;
+        }
+        self.screen_area = area;
+        self.toaster.set_area(area);
+        if self.toaster.has_toast()
+            && let Some((msg, typ)) = &self.last_toast
+        {
+            self.toaster.show_toast(toast_builder(msg.clone(), *typ));
+        }
     }
 
     fn success(&mut self, msg: impl Into<String>) {
