@@ -2,7 +2,7 @@ use opaline::names::tokens;
 use ratatui::prelude::*;
 use ratatui::widgets::Paragraph;
 
-use crate::app::state::{AppMode, AppState};
+use crate::app::state::{AppMode, AppState, View};
 
 /// Key hints in normal mode (and behind the theme picker, which shows its own).
 const NORMAL_HINTS: &[(&str, &str)] = &[
@@ -11,6 +11,17 @@ const NORMAL_HINTS: &[(&str, &str)] = &[
     ("[/]", "day"),
     ("Enter", "open"),
     ("o", "detail"),
+    ("i", "insights"),
+    ("s", "sidebar"),
+    ("r", "refresh"),
+    ("t", "theme"),
+    ("q", "quit"),
+];
+
+/// Key hints in the Insights view, which has no transaction list.
+const INSIGHTS_HINTS: &[(&str, &str)] = &[
+    ("h/l", "account"),
+    ("i", "transactions"),
     ("s", "sidebar"),
     ("r", "refresh"),
     ("t", "theme"),
@@ -30,7 +41,10 @@ pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
 
     let hints = match state.mode {
         AppMode::Detail => DETAIL_HINTS,
-        AppMode::Normal | AppMode::Theme(_) => NORMAL_HINTS,
+        AppMode::Normal | AppMode::Theme(_) => match state.view {
+            View::Transactions => NORMAL_HINTS,
+            View::Insights => INSIGHTS_HINTS,
+        },
     };
     let spans: Vec<Span> = hints
         .iter()

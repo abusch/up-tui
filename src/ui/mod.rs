@@ -1,4 +1,5 @@
 pub mod account_header;
+pub mod insights;
 pub mod sidebar;
 pub mod status_bar;
 pub mod toast;
@@ -13,7 +14,7 @@ use ratatui::widgets::{Block, Clear, Widget};
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
-use crate::app::state::AppMode;
+use crate::app::state::{AppMode, View};
 
 /// `left` with `right` right-aligned on the same line of `width` columns, or `right`
 /// on a line of its own (left-aligned) if they don't both fit with a space between.
@@ -63,7 +64,9 @@ impl Widget for &mut App {
             Layout::vertical([Constraint::Length(header_height), Constraint::Fill(1)]).areas(main);
         account_header::draw_account_header(buf, header, &self.state);
 
-        if self.state.show_detail {
+        if self.state.view == View::Insights {
+            insights::draw_insights(buf, main, &self.state);
+        } else if self.state.show_detail {
             // Split the rest horizontally: transaction list (left) + detail pane (right).
             // The pane takes a third of the screen's width, not of what the sidebar
             // leaves, so that it stays wide enough to read; the list gets the rest.

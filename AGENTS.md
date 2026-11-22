@@ -57,6 +57,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `tz` — the local `jiff` time zone, looked up once at startup; used for displaying times and grouping transactions by day (don't call `TimeZone::system()` elsewhere)
 - `show_detail` — whether the detail pane is visible
 - `show_sidebar` — whether the account sidebar is visible (it is by default)
+- `view` — `View::Transactions` (the transaction list and detail pane) or `View::Insights`; toggled with `i`, and kept when switching accounts
 - `page_size` — how many transactions fit in the list view (computed from the list block's inner area, 2 rows per item); written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
 
 `TabState` holds:
@@ -93,6 +94,13 @@ Status messages (loading, success, errors) are shown as toasts in the top-right 
 The sidebar (`src/ui/sidebar.rs`) lists the accounts under a heading per account type, each with its balance right-aligned, the selected one highlighted like the selected transaction, and the total of all balances at the bottom (when there's more than one account and `MoneyObject::sum` can add them up, i.e. they're in the same currency). Its width fits the longest row, between 20 and 40 columns and at most a third of the screen; longer names are truncated. 
 The account header (`src/ui/account_header.rs`) sits above the transaction list and the detail pane. It shows the selected account's name, type and ownership on one line, then its balance and, right-aligned, its money in and out over the last 30 days (on a line of their own if they don't fit). The totals show "loading…" until they're loaded, the stale totals while they're refreshed, and nothing if loading failed. Its height comes from `header_height()` (0 when there is no account yet). Because the header names the account, the list's title is just "Transactions" plus the loading status. `ui::right_aligned()` is the shared helper for a line with a right-aligned part that wraps onto its own line when it doesn't fit (also used for the detail pane's amount and status).
 
+The Insights view (`src/ui/insights.rs`) replaces the transaction list and detail pane below the header when `view` is `View::Insights`. It's computed from the tab's `recent` transactions (the same 30 days as the header's totals; no extra fetch), with the statistics in `src/app/insights.rs` as pure, unit-tested functions:
+
+- **Balance** (`daily_balances()`), at the top: the balance at the end of each day, worked backwards from the current balance through the recent transactions, drawn as a ratatui `Chart` (Braille line) with the first, middle and last dates. The vertical axis (`YAxis`) always includes zero, so the line's height is in proportion to the balance rather than exaggerating small changes, and is rounded out to multiples of a round step (1, 2 or 5 × a power of ten, at least one whole currency unit), which label it as whole amounts ("$2000"). The section has a fixed height (`BALANCE_HEIGHT`), so the chart is the same size for every account; on a short screen it shrinks to leave room for the categories, and is left out below `MIN_BALANCE_HEIGHT`.
+- **Spending by category** (`spending_by_category()`), below it: the debits, excluding transfers between the user's own accounts (`transfer_account` is set), summed per category (`None` is shown as "Uncategorised"), largest first; refunds aren't subtracted. Each category is a row with a bar (in eighths of a column, relative to the largest), the amount and its share. The list gets the space left by the balance section; if the categories don't fit, the smallest are grouped as "Other".
+
+While `recent` hasn't loaded, the view shows "Loading…", or a message to press `r` if loading failed.
+
 The detail pane and the detail popup (both in `src/ui/transaction_detail.rs`) show the same content, built by `detail_lines()`, for `state.selected_transaction()`. The popup is centred, at most 72 columns wide, and shrinks to the height of its content; it draws nothing if no transaction is selected. The content has a header (description, amount with the status right-aligned, category, tags) followed by sections (When, Details, Note, Message, Raw text) that are left out when empty. Redundant information is hidden: the hold amount when it equals the final amount, and the raw text when it matches the description. Its lines are wrapped to the pane's width by `textwrap` (first-fit), with long field values indented to the value column, so the `Paragraph` is rendered without its own wrapping. Dates are shown as "Today, 14:32", "Yesterday, …" or "Mon 18 Nov, …" (with the year only if it isn't the current one).
 
 ## Project Structure
@@ -109,13 +117,15 @@ src/
 
   app/
     mod.rs             App: main loop, event and key handling, fetch spawning, toasts
-    state.rs           AppState, AppMode, TabState, LoadKind
+    state.rs           AppState, AppMode, View, TabState, LoadKind
+    insights.rs        Statistics for the Insights view (spending by category, daily balances)
     event.rs           AppEvent enum, crossterm event reader task
 
   ui/
     mod.rs             Top-level layout (Widget impl for App), theme picker overlay
     sidebar.rs         Account sidebar: accounts grouped by type, balances, total
     account_header.rs  Selected account's name, type, balance and 30-day totals
+    insights.rs        Insights view: spending by category bars, balance chart
     transaction_list.rs  Transaction list grouped by day, description truncation
     transaction_detail.rs  Detail pane and popup with full transaction info
     status_bar.rs      Keybinding hints, per mode
@@ -130,7 +140,7 @@ src/
 - `get_accounts` and `get_transactions` take `PaginationOptions` (page size 50, or a `next_url` from a previous response) and return `PaginatedResponse { data, next_page_url }`
 - `get_transactions_since` fetches all of an account's transactions created since a timestamp (`filter[since]`), following every page
 - `Resource<A, R>` is generic over attributes (`A`) and relationships (`R`, defaults to `serde_json::Value`)
-- Format money with the `MoneyObject` methods: `format_display()` for transaction amounts (`+$10.56` for credits, `$10.56` for debits, which are distinguished by colour), `format_signed()` for balances (`-$10.56`), `format_unsigned()` for totals known to be money out (`$10.56`, and `$0.00` rather than `format_display()`'s `+$0.00`), and `format_display_with_code()` for foreign currencies (`+10.56 USD` / `10.56 USD`, signed like `format_display()`). They take the sign from `value_in_base_units` and the digits from the API's `value` string; don't parse `value` as a float or assume two decimal places for foreign currencies. Add amounts up with `MoneyObject::sum()` (exact, in base units; `None` for mixed currencies), starting from `zero_like()` when there may be nothing to add
+- Format money with the `MoneyObject` methods: `format_display()` for transaction amounts (`+$10.56` for credits, `$10.56` for debits, which are distinguished by colour), `format_signed()` for balances (`-$10.56`), `format_unsigned()` for totals known to be money out (`$10.56`, and `$0.00` rather than `format_display()`'s `+$0.00`), and `format_display_with_code()` for foreign currencies (`+10.56 USD` / `10.56 USD`, signed like `format_display()`). They take the sign from `value_in_base_units` and the digits from the API's `value` string; don't parse `value` as a float or assume two decimal places for foreign currencies. Add amounts up with `MoneyObject::sum()` (exact, in base units; `None` for mixed currencies), starting from `zero_like()` when there may be nothing to add; `with_base_units()` makes an amount in the same currency from base units (e.g. for chart labels), and `base_units_per_unit()` gives the number of base units in a whole unit (100 for dollars)
 - Transaction relationships (category, parentCategory, tags, transferAccount) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs. The detail pane resolves the transfer account's name from the loaded accounts via `state.account_name()`
 - `GET /categories` is called once on startup to populate the category ID → display name cache in `AppState`. The detail pane resolves IDs to names via `state.category_name()`, falling back to the raw ID if the cache hasn't loaded yet
 - Categories are hierarchical. The detail pane displays them on a single line as "Parent › Category" (e.g. "Good Life › Restaurants & Cafes")
@@ -151,6 +161,7 @@ src/
 | `Enter`             | Normal       | Open the detail popup (if a transaction is selected) |
 | `o`                 | Normal       | Toggle the detail pane                      |
 | `s`                 | Normal       | Toggle the account sidebar                  |
+| `i`                 | Normal       | Switch between the transaction list and the Insights view |
 | `Esc` / `Enter` / `q` | Detail popup | Close the popup                           |
 | `Ctrl+C`            | Detail popup | Quit                                        |
 | navigation keys     | Detail popup | As in Normal mode (`j`/`k`, `Ctrl+D`/`Ctrl+U`, `g`/`G`, `[`/`]`); the popup shows the newly selected transaction |
@@ -161,7 +172,7 @@ src/
 | `Enter`             | Theme picker | Apply the selected theme                    |
 | `Esc`               | Theme picker | Close without changing the theme            |
 
-Key handling lives in `App::handle_key`, which dispatches on the mode to `App::handle_normal_key`, `App::handle_detail_key`, or `ThemeSelectorState::handle_key`. The navigation keys, shared by Normal mode and the detail popup, are in `App::handle_navigation_key`. Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. After every Normal-mode or detail-popup key, `maybe_fetch_next_page()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` (one list per mode) should be kept in sync with the bindings.
+Key handling lives in `App::handle_key`, which dispatches on the mode to `App::handle_normal_key`, `App::handle_detail_key`, or `ThemeSelectorState::handle_key`. The navigation keys, shared by Normal mode and the detail popup, are in `App::handle_navigation_key`. Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. In the Insights view, the keys that act on the transaction list (navigation, `Enter`, `o`) are ignored. After every Normal-mode or detail-popup key, `maybe_fetch_next_page()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` (one list per mode, and for the Insights view) should be kept in sync with the bindings.
 
 ## Theming
 
@@ -177,10 +188,10 @@ All UI modules read colors from `state.theme` via semantic tokens (`opaline::nam
 - `BG_ELEVATED` — toast, detail popup and theme picker backgrounds
 - `BORDER_FOCUSED` — the detail popup's border
 - `BG_SELECTION` — selected transaction and account background
-- `ACCENT_PRIMARY` — sidebar, list, detail pane and popup titles, selection markers
-- `TEXT_MUTED` — foreign amounts and raw text in the detail pane; `TEXT_DIM` — day separators, sidebar and detail pane section headings, the account header's type and labels, times, status bar text
+- `ACCENT_PRIMARY` — sidebar, list, Insights, detail pane and popup titles, selection markers, the balance chart's line
+- `TEXT_MUTED` — foreign amounts and raw text in the detail pane; `TEXT_DIM` — day separators, sidebar, detail pane and Insights section headings, the Insights shares, chart axes and labels, the account header's type and labels, times, status bar text
 - `TEXT_SECONDARY` — field labels in the detail pane; tag text; the sidebar's total
-- `ACCENT_SECONDARY` — the category in the detail pane header
+- `ACCENT_SECONDARY` — the category in the detail pane header, the Insights category bars
 - `BG_HIGHLIGHT` — tag backgrounds in the detail pane
 - Amounts: `TEXT_PRIMARY` for debits (and money out in the account header), `SUCCESS` for credits (and money in)
 - `SUCCESS` / `WARNING` — settled / pending (held) status

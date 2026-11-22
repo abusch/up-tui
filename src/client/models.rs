@@ -133,20 +133,25 @@ impl MoneyObject {
             }
             total = total.checked_add(amount.value_in_base_units)?;
         }
+        first.with_base_units(total)
+    }
 
-        let sign = if total < 0 { "-" } else { "" };
-        let magnitude = total.unsigned_abs();
-        let value = match decimals {
+    /// An amount of `base_units` (e.g. cents) in the same currency, and with the same
+    /// number of decimal places. `None` if the number of decimal places is absurd.
+    pub fn with_base_units(&self, base_units: i64) -> Option<MoneyObject> {
+        let sign = if base_units < 0 { "-" } else { "" };
+        let magnitude = base_units.unsigned_abs();
+        let value = match self.decimals() {
             0 => format!("{sign}{magnitude}"),
-            _ => {
+            decimals => {
                 let unit = 10u64.checked_pow(u32::try_from(decimals).ok()?)?;
                 format!("{sign}{}.{:0decimals$}", magnitude / unit, magnitude % unit)
             }
         };
         Some(MoneyObject {
-            currency_code: first.currency_code.clone(),
+            currency_code: self.currency_code.clone(),
             value,
-            value_in_base_units: total,
+            value_in_base_units: base_units,
         })
     }
 
@@ -161,6 +166,15 @@ impl MoneyObject {
             value,
             value_in_base_units: 0,
         }
+    }
+
+    /// The number of base units in one whole unit of the currency (100 for dollars,
+    /// 1 for yen), from the number of decimal places in `value`.
+    pub fn base_units_per_unit(&self) -> i64 {
+        u32::try_from(self.decimals())
+            .ok()
+            .and_then(|decimals| 10i64.checked_pow(decimals))
+            .unwrap_or(1)
     }
 
     /// Number of decimal places in the API's `value` string.
@@ -460,6 +474,26 @@ mod tests {
         assert_eq!((zero.value.as_str(), zero.value_in_base_units), ("0.00", 0));
         assert_eq!(zero.currency_code, "AUD");
         assert_eq!(money("1500", 1500, "JPY").zero_like().value, "0");
+    }
+
+    #[test]
+    fn with_base_units_keeps_the_currency_and_precision() {
+        let aud = money("1.00", 100, "AUD");
+        assert_eq!(
+            aud.with_base_units(-123456).unwrap().format_signed(),
+            "-$1234.56"
+        );
+        assert_eq!(aud.with_base_units(5).unwrap().value, "0.05");
+        assert_eq!(
+            money("1", 1, "JPY").with_base_units(1500).unwrap().value,
+            "1500"
+        );
+    }
+
+    #[test]
+    fn base_units_per_unit_follows_the_precision() {
+        assert_eq!(money("1.00", 100, "AUD").base_units_per_unit(), 100);
+        assert_eq!(money("1500", 1500, "JPY").base_units_per_unit(), 1);
     }
 
     #[test]

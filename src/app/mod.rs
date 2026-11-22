@@ -11,7 +11,7 @@ use ratatui_toaster::{
 use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
-use crate::app::state::{AppMode, LoadKind, RECENT_DAYS, TabState, recent_since};
+use crate::app::state::{AppMode, LoadKind, RECENT_DAYS, TabState, View, recent_since};
 use crate::backend::AppTerminal;
 use crate::{
     app::{
@@ -23,6 +23,7 @@ use crate::{
 };
 
 pub mod event;
+pub mod insights;
 pub mod state;
 
 pub struct App {
@@ -238,13 +239,11 @@ impl App {
                     self.info("Loading transactions...");
                 }
             }
-            KeyCode::Enter => {
-                if self.state.selected_transaction().is_some() {
-                    self.state.mode = AppMode::Detail;
-                }
-            }
-            KeyCode::Char('o') => {
-                self.state.show_detail = !self.state.show_detail;
+            KeyCode::Char('i') => {
+                self.state.view = match self.state.view {
+                    View::Transactions => View::Insights,
+                    View::Insights => View::Transactions,
+                };
             }
             KeyCode::Char('s') => {
                 self.state.show_sidebar = !self.state.show_sidebar;
@@ -262,6 +261,16 @@ impl App {
             }
             KeyCode::Char('t') => {
                 self.state.mode = AppMode::Theme(ThemeSelectorState::with_current_selected());
+            }
+            // The rest act on the transaction list, which isn't shown in Insights.
+            _ if self.state.view != View::Transactions => {}
+            KeyCode::Enter => {
+                if self.state.selected_transaction().is_some() {
+                    self.state.mode = AppMode::Detail;
+                }
+            }
+            KeyCode::Char('o') => {
+                self.state.show_detail = !self.state.show_detail;
             }
             _ => self.handle_navigation_key(key),
         }

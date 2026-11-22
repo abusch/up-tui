@@ -17,6 +17,15 @@ pub fn recent_since(today: Date, tz: &TimeZone) -> Option<Timestamp> {
     Some(first_day.to_zoned_datetime(tz.clone()).ok()?.timestamp())
 }
 
+/// What the main area shows for the selected account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum View {
+    /// The transaction list (and the detail pane, if shown).
+    Transactions,
+    /// Statistics over the recent period.
+    Insights,
+}
+
 pub enum AppMode {
     Normal,
     /// The selected transaction's details are shown in a popup.
@@ -232,6 +241,8 @@ pub struct AppState {
     pub show_detail: bool,
     /// Whether the account sidebar is visible.
     pub show_sidebar: bool,
+    /// What the main area shows. It stays the same when switching accounts.
+    pub view: View,
     /// Number of transactions that fit in the list view; updated during rendering.
     pub page_size: usize,
 }
@@ -257,6 +268,7 @@ impl AppState {
             tz: TimeZone::system(),
             show_detail: false,
             show_sidebar: true,
+            view: View::Transactions,
             page_size: 0,
         }
     }
