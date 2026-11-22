@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use jiff::tz::TimeZone;
 use opaline::{ThemeSelectorAction, ThemeSelectorState, load_by_name};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, layout::Rect};
@@ -214,11 +213,11 @@ impl App {
             KeyCode::Char('g') => self.navigate(TabState::select_first),
             KeyCode::Char('G') => self.navigate(TabState::select_last),
             KeyCode::Char('[') => {
-                let tz = TimeZone::system();
+                let tz = self.state.tz.clone();
                 self.navigate(|tab| tab.select_prev_day(&tz));
             }
             KeyCode::Char(']') => {
-                let tz = TimeZone::system();
+                let tz = self.state.tz.clone();
                 self.navigate(|tab| tab.select_next_day(&tz));
             }
             KeyCode::Enter => {}

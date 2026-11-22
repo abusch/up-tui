@@ -178,6 +178,9 @@ pub struct AppState {
     pub categories: HashMap<String, String>,
     pub theme: opaline::Theme,
     pub config: Config,
+    /// Local time zone used to display times and group transactions by day.
+    /// Looked up once at startup.
+    pub tz: TimeZone,
     /// Whether the detail pane is visible.
     pub show_detail: bool,
     /// Height of the transaction list area (in rows), updated during rendering.
@@ -199,6 +202,7 @@ impl AppState {
                 .and_then(opaline::load_by_name)
                 .unwrap_or_default(),
             config,
+            tz: TimeZone::system(),
             show_detail: false,
             list_height: 0,
         }

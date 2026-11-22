@@ -51,6 +51,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `categories` — cached `HashMap<String, String>` mapping category IDs to display names, fetched once on startup via `GET /categories`
 - `theme` — the current `opaline::Theme`
 - `config` — the loaded `Config`
+- `tz` — the local `jiff` time zone, looked up once at startup; used for displaying times and grouping transactions by day (don't call `TimeZone::system()` elsewhere)
 - `show_detail` — whether the detail pane is visible
 - `list_height` — visible page size of the transaction list, in transaction items; written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
 

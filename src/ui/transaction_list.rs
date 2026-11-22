@@ -1,4 +1,3 @@
-use jiff::tz::TimeZone;
 use opaline::names::tokens::{self, ACCENT_PRIMARY};
 use ratatui::{
     prelude::*,
@@ -67,7 +66,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
 
     // 2 for horizontal padding + 2 for highlight symbol ("▎ ")
     let inner_width = area.width.saturating_sub(4) as usize;
-    let tz = TimeZone::system();
+    let tz = state.tz.clone();
 
     // Build list items with day separators. Track which list index corresponds
     // to each transaction so we can map `tab.selected` to the right row.

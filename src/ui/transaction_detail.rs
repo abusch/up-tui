@@ -1,4 +1,3 @@
-use jiff::tz::TimeZone;
 use opaline::names::tokens;
 use ratatui::{
     prelude::*,
@@ -87,7 +86,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         &mut lines,
         "Created",
         &txn.created_at
-            .to_zoned_datetime(TimeZone::system())
+            .to_zoned_datetime(state.tz.clone())
             .strftime("%Y-%m-%d %H:%M:%S")
             .to_string(),
         label_style,
@@ -99,7 +98,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
             &mut lines,
             "Settled",
             &settled
-                .to_zoned_datetime(TimeZone::system())
+                .to_zoned_datetime(state.tz.clone())
                 .strftime("%Y-%m-%d %H:%M:%S")
                 .to_string(),
             label_style,
