@@ -245,17 +245,9 @@ impl DetailLines {
 
     /// `left` with `right` right-aligned on the same line, or on the next line if
     /// they don't both fit.
-    fn right_aligned(&mut self, mut left: Vec<Span<'static>>, right: Span<'static>) {
-        let left_width: usize = left.iter().map(|s| s.content.width()).sum();
-        let right_width = right.content.width();
-        if left_width + 1 + right_width <= self.width {
-            left.push(Span::raw(" ".repeat(self.width - left_width - right_width)));
-            left.push(right);
-            self.lines.push(Line::from(left));
-        } else {
-            self.lines.push(Line::from(left));
-            self.lines.push(Line::from(right));
-        }
+    fn right_aligned(&mut self, left: Vec<Span<'static>>, right: Span<'static>) {
+        self.lines
+            .extend(super::right_aligned(left, vec![right], self.width));
     }
 
     /// Tags as padded "pills", wrapping between tags.

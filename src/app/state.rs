@@ -1,11 +1,21 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use jiff::{civil::Date, tz::TimeZone};
+use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
 use opaline::ThemeSelectorState;
 use ratatui::widgets::ListState;
 
-use crate::client::models::{Account, Transaction};
+use crate::client::models::{Account, MoneyObject, Transaction};
+
+/// The number of days, including today, that the account header's totals cover.
+pub const RECENT_DAYS: i32 = 30;
+
+/// Start of the period the account header's totals cover: midnight at the start of
+/// the first of the last `RECENT_DAYS` days (including today) in `tz`.
+pub fn recent_since(today: Date, tz: &TimeZone) -> Option<Timestamp> {
+    let first_day = today.checked_sub((RECENT_DAYS - 1).days()).ok()?;
+    Some(first_day.to_zoned_datetime(tz.clone()).ok()?.timestamp())
+}
 
 pub enum AppMode {
     Normal,
@@ -36,6 +46,14 @@ pub struct TabState {
     /// URL of the next page of transactions, if there are more to load.
     pub next_page: Option<String>,
     pub list_state: ListState,
+    /// All the account's transactions since `recent_since`, for the header's totals;
+    /// `None` until the first successful load. Fetched separately from the paginated
+    /// `transactions`.
+    pub recent: Option<Vec<Transaction>>,
+    /// Whether a fetch of `recent` is in flight.
+    pub recent_loading: bool,
+    /// Like `generation`, for fetches of `recent`.
+    pub recent_generation: u64,
 }
 
 impl TabState {
@@ -48,7 +66,32 @@ impl TabState {
             generation: 0,
             next_page: None,
             list_state: ListState::default(),
+            recent: None,
+            recent_loading: false,
+            recent_generation: 0,
         }
+    }
+
+    /// Mark a new fetch of `recent` as started and return its generation.
+    pub fn start_recent_load(&mut self) -> u64 {
+        self.recent_generation += 1;
+        self.recent_loading = true;
+        self.recent_generation
+    }
+
+    /// Money in (credits) and money out (debits) over the recent period, if loaded.
+    pub fn recent_totals(&self) -> Option<(MoneyObject, MoneyObject)> {
+        let recent = self.recent.as_ref()?;
+        // Start from zero, so that a period with no credits (or debits) adds up to zero.
+        let zero = self.account.balance.zero_like();
+        let total = |debits: bool| {
+            let amounts = recent
+                .iter()
+                .map(|t| &t.amount)
+                .filter(|amount| amount.is_negative() == debits);
+            MoneyObject::sum(std::iter::once(&zero).chain(amounts))
+        };
+        Some((total(false)?, total(true)?))
     }
 
     /// Mark a new fetch as started and return its generation.
@@ -460,6 +503,7 @@ pub(crate) mod tests {
             id: id.to_string(),
             display_name: format!("Account {id}"),
             account_type: "TRANSACTIONAL".to_string(),
+            ownership_type: "INDIVIDUAL".to_string(),
             balance: money(cents),
         }
     }
@@ -475,6 +519,41 @@ pub(crate) mod tests {
         let ids: Vec<_> = s.tabs.iter().map(|t| t.account.id.as_str()).collect();
         assert_eq!(ids, ["a", "b"]);
         assert_eq!(s.active_tab, 0);
+    }
+
+    #[test]
+    fn recent_totals_split_credits_and_debits() {
+        let mut tab = TabState::new(account("a", 0));
+        assert!(tab.recent_totals().is_none());
+
+        let with_amount = |id, cents| Transaction {
+            amount: money(cents),
+            ..txn(id, "2026-11-20T18:00:00Z")
+        };
+        tab.recent = Some(vec![
+            with_amount("t0", -1050),
+            with_amount("t1", 420000),
+            with_amount("t2", -250),
+        ]);
+        let (money_in, money_out) = tab.recent_totals().unwrap();
+        assert_eq!(money_in.format_display(), "+$4200.00");
+        assert_eq!(money_out.format_display(), "$13.00");
+
+        tab.recent = Some(Vec::new());
+        let (money_in, money_out) = tab.recent_totals().unwrap();
+        assert_eq!(
+            (money_in.value.as_str(), money_out.value.as_str()),
+            ("0.00", "0.00")
+        );
+    }
+
+    #[test]
+    fn recent_period_starts_at_local_midnight() {
+        let tz = TimeZone::get("Australia/Sydney").unwrap();
+        let since = recent_since("2026-11-23".parse().unwrap(), &tz).unwrap();
+        // 30 days including today: from midnight on 25 October, in daylight saving time
+        // (UTC+11).
+        assert_eq!(since.to_string(), "2026-10-24T13:00:00Z");
     }
 
     #[test]

@@ -96,4 +96,26 @@ impl UpClient {
             next_page_url: resp.links.and_then(|l| l.next),
         })
     }
+
+    /// All the account's transactions created since `since`, following every page.
+    pub async fn get_transactions_since(
+        &self,
+        account_id: &str,
+        since: jiff::Timestamp,
+        reload: bool,
+    ) -> Result<Vec<Transaction>> {
+        // The largest page size the API allows, to make as few requests as possible.
+        let mut url = Some(format!(
+            "{BASE_URL}/accounts/{account_id}/transactions?page[size]=100&filter[since]={since}"
+        ));
+        let mut transactions = Vec::new();
+        while let Some(page_url) = url {
+            let resp: JsonApiResponse<
+                Vec<Resource<TransactionAttributes, TransactionRelationships>>,
+            > = self.get_json(&page_url, reload).await?;
+            transactions.extend(resp.data.into_iter().map(Transaction::from));
+            url = resp.links.and_then(|l| l.next);
+        }
+        Ok(transactions)
+    }
 }

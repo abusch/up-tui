@@ -1,3 +1,4 @@
+pub mod account_header;
 pub mod sidebar;
 pub mod status_bar;
 pub mod toast;
@@ -9,9 +10,28 @@ use opaline::names::tokens;
 use ratatui::layout::Spacing;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Clear, Widget};
+use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 use crate::app::state::AppMode;
+
+/// `left` with `right` right-aligned on the same line of `width` columns, or `right`
+/// on a line of its own (left-aligned) if they don't both fit with a space between.
+fn right_aligned(
+    mut left: Vec<Span<'static>>,
+    right: Vec<Span<'static>>,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let span_width = |spans: &[Span]| -> usize { spans.iter().map(|s| s.content.width()).sum() };
+    let (left_width, right_width) = (span_width(&left), span_width(&right));
+    if left_width + 1 + right_width <= width {
+        left.push(Span::raw(" ".repeat(width - left_width - right_width)));
+        left.extend(right);
+        vec![Line::from(left)]
+    } else {
+        vec![Line::from(left), Line::from(right)]
+    }
+}
 
 impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -36,6 +56,12 @@ impl Widget for &mut App {
         } else {
             main
         };
+
+        // The selected account's header, above the list and the detail pane.
+        let header_height = account_header::header_height(&self.state, main.width);
+        let [header, main] =
+            Layout::vertical([Constraint::Length(header_height), Constraint::Fill(1)]).areas(main);
+        account_header::draw_account_header(buf, header, &self.state);
 
         if self.state.show_detail {
             // Split the rest horizontally: transaction list (left) + detail pane (right).

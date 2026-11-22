@@ -11,7 +11,7 @@ use ratatui_toaster::{
 use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
-use crate::app::state::{AppMode, LoadKind, TabState};
+use crate::app::state::{AppMode, LoadKind, RECENT_DAYS, TabState, recent_since};
 use crate::{
     app::{
         event::{AppEvent, spawn_event_reader},
@@ -107,7 +107,7 @@ impl App {
                     Ok(accounts) => {
                         self.state.set_accounts(accounts);
                         self.success("Accounts loaded");
-                        self.ensure_transactions_loaded();
+                        self.ensure_tab_loaded();
                     }
                     Err(e) => {
                         self.error(format!(
@@ -161,6 +161,33 @@ impl App {
                     }
                 }
             }
+            AppEvent::RecentLoaded {
+                account_id,
+                generation,
+                result,
+            } => {
+                let Some(tab) = self
+                    .state
+                    .tab_index(&account_id)
+                    .and_then(|idx| self.state.tabs.get_mut(idx))
+                else {
+                    return; // account no longer exists
+                };
+                if tab.recent_generation != generation {
+                    return; // superseded by a later fetch
+                }
+                tab.recent_loading = false;
+                match result {
+                    // No toast on success: the transactions' own toast is enough.
+                    Ok(transactions) => tab.recent = Some(transactions),
+                    Err(e) => {
+                        self.error(format!(
+                            "Failed to load the last {RECENT_DAYS} days' totals: {}",
+                            e.format_current_context()
+                        ));
+                    }
+                }
+            }
             AppEvent::ToastExpired(id) => {
                 if id == self.toast_id {
                     self.toaster.hide_toast();
@@ -200,13 +227,13 @@ impl App {
             }
             KeyCode::Tab | KeyCode::Char('l') => {
                 self.state.next_tab();
-                if self.ensure_transactions_loaded() {
+                if self.ensure_tab_loaded() {
                     self.info("Loading transactions...");
                 }
             }
             KeyCode::BackTab | KeyCode::Char('h') => {
                 self.state.prev_tab();
-                if self.ensure_transactions_loaded() {
+                if self.ensure_tab_loaded() {
                     self.info("Loading transactions...");
                 }
             }
@@ -230,6 +257,7 @@ impl App {
                 self.fetch_accounts(true);
                 let idx = self.state.active_tab;
                 self.fetch_transactions(idx, LoadKind::Replace, None, true);
+                self.fetch_recent(idx, true);
             }
             KeyCode::Char('t') => {
                 self.state.mode = AppMode::Theme(ThemeSelectorState::with_current_selected());
@@ -316,19 +344,53 @@ impl App {
         });
     }
 
-    /// Start loading the active tab's transactions if they haven't been loaded and
-    /// nothing is in flight. Returns whether a fetch was started.
-    fn ensure_transactions_loaded(&mut self) -> bool {
+    /// Start loading the active tab's transactions, and its recent transactions for the
+    /// header's totals, if they haven't been loaded and nothing is in flight. Returns
+    /// whether a fetch of the transaction list was started.
+    fn ensure_tab_loaded(&mut self) -> bool {
         let idx = self.state.active_tab;
-        if let Some(tab) = self.state.tabs.get(idx)
-            && tab.transactions.is_none()
-            && tab.loading.is_none()
-        {
+        let Some(tab) = self.state.tabs.get(idx) else {
+            return false;
+        };
+        if tab.recent.is_none() && !tab.recent_loading {
+            self.fetch_recent(idx, false);
+        }
+        let tab = &self.state.tabs[idx];
+        if tab.transactions.is_none() && tab.loading.is_none() {
             self.fetch_transactions(idx, LoadKind::Replace, None, false);
             true
         } else {
             false
         }
+    }
+
+    /// Fetch a tab's transactions over the recent period, for the header's totals.
+    fn fetch_recent(&mut self, tab_index: usize, reload: bool) {
+        let today = jiff::Timestamp::now()
+            .to_zoned_datetime(self.state.tz.clone())
+            .date();
+        let Some(since) = recent_since(today, &self.state.tz) else {
+            return;
+        };
+        let Some(tab) = self.state.tabs.get_mut(tab_index) else {
+            return;
+        };
+        let account_id = tab.account.id.clone();
+        let generation = tab.start_recent_load();
+        let client = Arc::clone(&self.client);
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            let result = client
+                .get_transactions_since(&account_id, since, reload)
+                .await;
+            let _ = tx
+                .send(AppEvent::RecentLoaded {
+                    account_id,
+                    generation,
+                    result,
+                })
+                .await;
+        });
     }
 
     fn maybe_fetch_next_page(&mut self) {

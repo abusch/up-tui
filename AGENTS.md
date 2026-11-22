@@ -31,7 +31,7 @@ theme = "tokyo-night"  # optional
 All input and API results flow through a single bounded `tokio::sync::mpsc::channel::<AppEvent>(100)`:
 
 - **Terminal events**: `spawn_event_reader` runs a crossterm `EventStream` on a tokio task. It forwards key presses (key *releases* are ignored, so keys aren't handled twice on platforms that report them) as `AppEvent::Key`, and terminal resizes as `AppEvent::Resize` (handled as a no-op; receiving any event triggers a redraw). If the input stream errors or ends, it sends `AppEvent::InputError`, and `run()` returns that error, so the app exits instead of hanging with no keyboard.
-- **API results**: spawned tasks send `AppEvent::AccountsLoaded`, `AppEvent::TransactionsLoaded`, or `AppEvent::CategoriesLoaded` when HTTP requests complete.
+- **API results**: spawned tasks send `AppEvent::AccountsLoaded`, `AppEvent::TransactionsLoaded`, `AppEvent::RecentLoaded`, or `AppEvent::CategoriesLoaded` when HTTP requests complete.
 - **Toast timers**: `AppEvent::ToastExpired(id)` (see Toasts below).
 
 The main loop is: draw → recv event → handle event → repeat, until `state.should_quit`.
@@ -57,23 +57,26 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 
 `TabState` holds:
 
-- `account` — the `Account` this tab shows (name, balance)
+- `account` — the `Account` this tab shows (name, type, ownership, balance)
 - `transactions` — `None` until the first successful load
 - `selected` — index into `transactions`. Invariant: `selected < transactions.len()` (or 0 when empty). Always replace the list via `set_transactions()`, which keeps the same transaction selected (by `id`) when it is still present and clamps otherwise.
 - `loading` — `Option<LoadKind>`: `Replace` (initial load/refresh) or `Append` (next page)
 - `generation` — incremented by `start_load()` for every fetch; results carrying an older generation were superseded and are dropped
 - `next_page` — URL of the next page of transactions, if any
 - `list_state` — ratatui `ListState`, used for scrolling
+- `recent` — all of the account's transactions over the last `RECENT_DAYS` (30) days, including today, for the account header's totals; `None` until the first successful load. It's fetched separately from the paginated `transactions` (see Loading). `recent_totals()` adds them up into money in and money out
+- `recent_loading` / `recent_generation` — like `loading` and `generation`, for fetches of `recent` (started with `start_recent_load()`)
 
 `set_accounts()` keeps the `TabState` of accounts that still exist (matched by account id, with the account data such as the balance updated) and keeps the active tab on the same account.
 
 ### Loading, Refresh and Pagination
 
-- On startup, accounts and categories are fetched. When accounts arrive, the active tab's transactions are fetched.
-- Transactions are fetched per tab on first view: switching to a tab with no loaded transactions (and nothing in flight) triggers a fetch. This also retries a tab whose previous load failed.
-- `r` re-fetches the account list (refreshing balances, and recovering if the initial accounts load failed) and the current tab's first page of transactions. Refreshes bypass the HTTP cache. Refreshing replaces the list with the first page only.
+- On startup, accounts and categories are fetched. When accounts arrive, the active tab's transactions (and recent transactions) are fetched.
+- Transactions are fetched per tab on first view by `ensure_tab_loaded()`: switching to a tab with no loaded transactions (and nothing in flight) triggers a fetch, and likewise for its recent transactions. This also retries a tab whose previous load failed.
+- The recent transactions are fetched with `filter[since]` set to `recent_since()` (local midnight at the start of the period), following every page (100 per page) in one task; they arrive as `RecentLoaded`. A failure shows an error toast; success shows none.
+- `r` re-fetches the account list (refreshing balances, and recovering if the initial accounts load failed), the current tab's first page of transactions, and its recent transactions. Refreshes bypass the HTTP cache. Refreshing replaces the list with the first page only.
 - Transactions are fetched 50 per page. When navigation brings the selection within `page_size` items of the end of the loaded list and there is a `next_page`, the next page is fetched and appended.
-- `TransactionsLoaded` identifies its tab by `account_id` (not tab index) plus `generation`.
+- `TransactionsLoaded` and `RecentLoaded` identify their tab by `account_id` (not tab index) plus a generation.
 
 ### Toasts
 
@@ -83,7 +86,8 @@ Status messages (loading, success, errors) are shown as toasts in the top-right 
 
 `impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the account sidebar on the left (when `show_sidebar` is set), the transaction list (and the detail pane on the right, taking one third of the screen's width, when `show_detail` is set; the list takes whatever is left), the status bar, the detail popup when in `AppMode::Detail`, toasts, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size`, updates each tab's `list_state`, and updates the toast area.
 
-The sidebar (`src/ui/sidebar.rs`) lists the accounts under a heading per account type, each with its balance right-aligned, the selected one highlighted like the selected transaction, and the total of all balances at the bottom (when there's more than one account and `MoneyObject::sum` can add them up, i.e. they're in the same currency). Its width fits the longest row, between 20 and 40 columns and at most a third of the screen; longer names are truncated. The transaction list's title is the selected account's name, so you can tell which account is shown when the sidebar is hidden.
+The sidebar (`src/ui/sidebar.rs`) lists the accounts under a heading per account type, each with its balance right-aligned, the selected one highlighted like the selected transaction, and the total of all balances at the bottom (when there's more than one account and `MoneyObject::sum` can add them up, i.e. they're in the same currency). Its width fits the longest row, between 20 and 40 columns and at most a third of the screen; longer names are truncated. 
+The account header (`src/ui/account_header.rs`) sits above the transaction list and the detail pane. It shows the selected account's name, type and ownership on one line, then its balance and, right-aligned, its money in and out over the last 30 days (on a line of their own if they don't fit). The totals show "loading…" until they're loaded, the stale totals while they're refreshed, and nothing if loading failed. Its height comes from `header_height()` (0 when there is no account yet). Because the header names the account, the list's title is just "Transactions" plus the loading status. `ui::right_aligned()` is the shared helper for a line with a right-aligned part that wraps onto its own line when it doesn't fit (also used for the detail pane's amount and status).
 
 The detail pane and the detail popup (both in `src/ui/transaction_detail.rs`) show the same content, built by `detail_lines()`, for `state.selected_transaction()`. The popup is centred, at most 72 columns wide, and shrinks to the height of its content; it draws nothing if no transaction is selected. The content has a header (description, amount with the status right-aligned, category, tags) followed by sections (When, Details, Note, Message, Raw text) that are left out when empty. Redundant information is hidden: the hold amount when it equals the final amount, and the raw text when it matches the description. Its lines are wrapped to the pane's width by `textwrap` (first-fit), with long field values indented to the value column, so the `Paragraph` is rendered without its own wrapping. Dates are shown as "Today, 14:32", "Yesterday, …" or "Mon 18 Nov, …" (with the year only if it isn't the current one).
 
@@ -106,6 +110,7 @@ src/
   ui/
     mod.rs             Top-level layout (Widget impl for App), theme picker overlay
     sidebar.rs         Account sidebar: accounts grouped by type, balances, total
+    account_header.rs  Selected account's name, type, balance and 30-day totals
     transaction_list.rs  Transaction list grouped by day, description truncation
     transaction_detail.rs  Detail pane and popup with full transaction info
     status_bar.rs      Keybinding hints, per mode
@@ -118,8 +123,9 @@ src/
 - Auth: `Authorization: Bearer {token}` set as a default header on the `reqwest::Client`
 - The client is wrapped with `reqwest-middleware` and `http-cache-reqwest` (in-memory Moka cache, `CacheMode::Default`). Endpoint methods take a `reload` flag; when set, the request uses `CacheMode::Reload` (bypass the cache, update it with the response). It is used for user-initiated refreshes.
 - `get_accounts` and `get_transactions` take `PaginationOptions` (page size 50, or a `next_url` from a previous response) and return `PaginatedResponse { data, next_page_url }`
+- `get_transactions_since` fetches all of an account's transactions created since a timestamp (`filter[since]`), following every page
 - `Resource<A, R>` is generic over attributes (`A`) and relationships (`R`, defaults to `serde_json::Value`)
-- Format money with the `MoneyObject` methods: `format_display()` for transaction amounts (`+$10.56` for credits, `$10.56` for debits, which are distinguished by colour), `format_signed()` for balances (`-$10.56`), and `format_display_with_code()` for foreign currencies (`+10.56 USD` / `10.56 USD`, signed like `format_display()`). They take the sign from `value_in_base_units` and the digits from the API's `value` string; don't parse `value` as a float or assume two decimal places for foreign currencies
+- Format money with the `MoneyObject` methods: `format_display()` for transaction amounts (`+$10.56` for credits, `$10.56` for debits, which are distinguished by colour), `format_signed()` for balances (`-$10.56`), `format_unsigned()` for totals known to be money out (`$10.56`, and `$0.00` rather than `format_display()`'s `+$0.00`), and `format_display_with_code()` for foreign currencies (`+10.56 USD` / `10.56 USD`, signed like `format_display()`). They take the sign from `value_in_base_units` and the digits from the API's `value` string; don't parse `value` as a float or assume two decimal places for foreign currencies. Add amounts up with `MoneyObject::sum()` (exact, in base units; `None` for mixed currencies), starting from `zero_like()` when there may be nothing to add
 - Transaction relationships (category, parentCategory, tags, transferAccount) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs. The detail pane resolves the transfer account's name from the loaded accounts via `state.account_name()`
 - `GET /categories` is called once on startup to populate the category ID → display name cache in `AppState`. The detail pane resolves IDs to names via `state.category_name()`, falling back to the raw ID if the cache hasn't loaded yet
 - Categories are hierarchical. The detail pane displays them on a single line as "Parent › Category" (e.g. "Good Life › Restaurants & Cafes")
@@ -160,18 +166,18 @@ The picker (`ThemeSelector`) draws itself with opaline's *global* theme, and pre
 
 All UI modules read colors from `state.theme` via semantic tokens (`opaline::names::tokens`) — no hardcoded colors, and nothing drawn by a third-party widget with its own colours. Use `theme.color(token)`; `theme.line()`/`span()`/`style()` take opaline *style* names (`opaline::names::styles`), not tokens, and silently return an unstyled result for an unknown name. Tokens in use:
 
-- `BG_BASE` / `TEXT_PRIMARY` — base background and foreground, including the transaction list and status bar
+- `BG_BASE` / `TEXT_PRIMARY` — base background and foreground, including the account header, transaction list and status bar
 - `BG_PANEL` — sidebar and detail pane background (the transaction list is on `BG_BASE`)
-- `BORDER_UNFOCUSED` — the sidebar's right border and the detail pane's left border, which separate them from the list (some themes use the same colour for `BG_BASE` and `BG_PANEL`)
+- `BORDER_UNFOCUSED` — the sidebar's right border, the account header's bottom border, and the detail pane's left border, which separate them from the list (some themes use the same colour for `BG_BASE` and `BG_PANEL`)
 - `BG_ELEVATED` — toast, detail popup and theme picker backgrounds
 - `BORDER_FOCUSED` — the detail popup's border
 - `BG_SELECTION` — selected transaction and account background
 - `ACCENT_PRIMARY` — sidebar, list, detail pane and popup titles, selection markers
-- `TEXT_MUTED` — foreign amounts and raw text in the detail pane; `TEXT_DIM` — day separators, sidebar and detail pane section headings, times, status bar text
+- `TEXT_MUTED` — foreign amounts and raw text in the detail pane; `TEXT_DIM` — day separators, sidebar and detail pane section headings, the account header's type and labels, times, status bar text
 - `TEXT_SECONDARY` — field labels in the detail pane; tag text; the sidebar's total
 - `ACCENT_SECONDARY` — the category in the detail pane header
 - `BG_HIGHLIGHT` — tag backgrounds in the detail pane
-- Amounts: `TEXT_PRIMARY` for debits, `SUCCESS` for credits
+- Amounts: `TEXT_PRIMARY` for debits (and money out in the account header), `SUCCESS` for credits (and money in)
 - `SUCCESS` / `WARNING` — settled / pending (held) status
 - `INFO` — keybinding hints in the status bar
 - `INFO` / `SUCCESS` / `WARNING` / `ERROR` — toast borders, by toast type

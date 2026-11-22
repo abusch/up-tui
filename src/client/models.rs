@@ -75,6 +75,7 @@ pub struct CategoryAttributes {
 pub struct AccountAttributes {
     pub display_name: String,
     pub account_type: String,
+    pub ownership_type: String,
     pub balance: MoneyObject,
     pub created_at: Timestamp,
 }
@@ -105,6 +106,12 @@ impl MoneyObject {
     pub fn format_display(&self) -> String {
         let sign = if self.is_negative() { "" } else { "+" };
         format!("{sign}${}", self.magnitude())
+    }
+
+    /// An amount in dollars without its sign, e.g. for a total that's known to be
+    /// money out (`$10.56`).
+    pub fn format_unsigned(&self) -> String {
+        format!("${}", self.magnitude())
     }
 
     /// A signed amount in dollars, e.g. for balances (`$10.56`, `-$10.56`).
@@ -141,6 +148,19 @@ impl MoneyObject {
             value,
             value_in_base_units: total,
         })
+    }
+
+    /// Zero, in the same currency and with the same number of decimal places.
+    pub fn zero_like(&self) -> MoneyObject {
+        let value = match self.decimals() {
+            0 => "0".to_string(),
+            decimals => format!("0.{}", "0".repeat(decimals)),
+        };
+        MoneyObject {
+            currency_code: self.currency_code.clone(),
+            value,
+            value_in_base_units: 0,
+        }
     }
 
     /// Number of decimal places in the API's `value` string.
@@ -265,7 +285,10 @@ pub struct PaginatedResponse<T> {
 pub struct Account {
     pub id: String,
     pub display_name: String,
+    /// `TRANSACTIONAL`, `SAVER` or `HOME_LOAN`.
     pub account_type: String,
+    /// `INDIVIDUAL` or `JOINT` (a 2Up account).
+    pub ownership_type: String,
     pub balance: MoneyObject,
 }
 
@@ -288,6 +311,7 @@ impl From<Resource<AccountAttributes>> for Account {
             id: r.id,
             display_name: r.attributes.display_name,
             account_type: r.attributes.account_type,
+            ownership_type: r.attributes.ownership_type,
             balance: r.attributes.balance,
         }
     }
@@ -386,6 +410,12 @@ mod tests {
     }
 
     #[test]
+    fn format_unsigned_drops_the_sign() {
+        assert_eq!(money("-10.56", -1056, "AUD").format_unsigned(), "$10.56");
+        assert_eq!(money("0.00", 0, "AUD").format_unsigned(), "$0.00");
+    }
+
+    #[test]
     fn format_signed_puts_the_sign_before_the_dollar() {
         assert_eq!(money("1234.50", 123450, "AUD").format_signed(), "$1234.50");
         assert_eq!(money("-12.30", -1230, "AUD").format_signed(), "-$12.30");
@@ -422,6 +452,14 @@ mod tests {
 
         let yen = MoneyObject::sum(&[money("1500", 1500, "JPY"), money("20", 20, "JPY")]);
         assert_eq!(yen.unwrap().value, "1520");
+    }
+
+    #[test]
+    fn zero_like_keeps_the_currency_and_precision() {
+        let zero = money("-12.50", -1250, "AUD").zero_like();
+        assert_eq!((zero.value.as_str(), zero.value_in_base_units), ("0.00", 0));
+        assert_eq!(zero.currency_code, "AUD");
+        assert_eq!(money("1500", 1500, "JPY").zero_like().value, "0");
     }
 
     #[test]

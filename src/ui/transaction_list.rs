@@ -29,28 +29,24 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     // separator rows are ignored, so this is an upper bound.
     state.page_size = usize::from(block(String::new()).inner(area).height / 2);
 
-    // The title names the account (there are no tabs, and the sidebar can be hidden),
-    // followed by the loading status.
-    let (name, status, transactions) = match state.current_tab() {
-        None => ("Transactions", "", None),
-        Some(tab) => {
-            let name = tab.account.display_name.as_str();
-            match (&tab.transactions, tab.loading) {
-                (None, Some(_)) => (name, " - Loading...", None),
-                (Some(txns), loading) if !txns.is_empty() => {
-                    let status = match loading {
-                        Some(LoadKind::Replace) => " - Refreshing...",
-                        Some(LoadKind::Append) => " - Loading more...",
-                        None => "",
-                    };
-                    (name, status, Some(txns))
-                }
-                (Some(_), _) => (name, " - No transactions", None),
-                (None, None) => (name, "", None),
+    // The title shows the loading status. (The account header names the account.)
+    let (status, transactions) = match state.current_tab() {
+        None => ("", None),
+        Some(tab) => match (&tab.transactions, tab.loading) {
+            (None, Some(_)) => (" - Loading...", None),
+            (Some(txns), loading) if !txns.is_empty() => {
+                let status = match loading {
+                    Some(LoadKind::Replace) => " - Refreshing...",
+                    Some(LoadKind::Append) => " - Loading more...",
+                    None => "",
+                };
+                (status, Some(txns))
             }
-        }
+            (Some(_), _) => (" - No transactions", None),
+            (None, None) => ("", None),
+        },
     };
-    let title = format!(" {name}{status} ");
+    let title = format!(" Transactions{status} ");
 
     let Some(transactions) = transactions else {
         block(title).render(area, buf);
