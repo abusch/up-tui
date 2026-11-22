@@ -59,10 +59,10 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         add_field(&mut lines, "Raw Text", raw, label_style, value_style);
     }
 
-    let amount_color = if txn.amount.value_in_base_units >= 0 {
-        success
-    } else {
+    let amount_color = if txn.amount.is_negative() {
         fg
+    } else {
+        success
     };
     lines.push(Line::from(vec![
         Span::styled("Amount:       ", label_style),
@@ -118,7 +118,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         add_field(
             &mut lines,
             "Foreign Amount",
-            &format!("{} {}", foreign.value, foreign.currency_code),
+            &foreign.format_with_code(),
             label_style,
             value_style,
         );
@@ -136,7 +136,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
             add_field(
                 &mut lines,
                 "Hold Foreign",
-                &format!("{} {}", foreign.value, foreign.currency_code),
+                &foreign.format_with_code(),
                 label_style,
                 value_style,
             );
@@ -147,7 +147,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         add_field(
             &mut lines,
             "Round Up",
-            &round_up.amount.value,
+            &round_up.amount.format_display(),
             label_style,
             value_style,
         );
@@ -155,7 +155,7 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
             add_field(
                 &mut lines,
                 "Boost Portion",
-                &boost.value,
+                &boost.format_display(),
                 label_style,
                 value_style,
             );
@@ -166,18 +166,25 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
         add_field(
             &mut lines,
             "Cashback",
-            &format!("{} ({})", cashback.amount.value, cashback.description),
+            &format!(
+                "{} ({})",
+                cashback.amount.format_display(),
+                cashback.description
+            ),
             label_style,
             value_style,
         );
     }
 
     if let Some(ref card) = txn.card_purchase_method {
-        let suffix = card.card_number_suffix.as_deref().unwrap_or("****");
+        let display = match &card.card_number_suffix {
+            Some(suffix) => format!("{} (****{suffix})", card.method),
+            None => card.method.clone(),
+        };
         add_field(
             &mut lines,
             "Card Method",
-            &format!("{} (****{})", card.method, suffix),
+            &display,
             label_style,
             value_style,
         );

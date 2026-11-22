@@ -13,8 +13,11 @@ pub fn draw_tabs(buf: &mut Buffer, area: Rect, state: &AppState) {
         .iter()
         .map(|tab| &tab.account)
         .map(|acc| {
-            let balance = format_balance(&acc.balance.value);
-            Line::from(format!(" {} {} ", acc.display_name, balance))
+            Line::from(format!(
+                " {} {} ",
+                acc.display_name,
+                acc.balance.format_signed()
+            ))
         })
         .collect();
 
@@ -25,12 +28,4 @@ pub fn draw_tabs(buf: &mut Buffer, area: Rect, state: &AppState) {
         .divider(Span::raw("│"));
 
     tabs.render(area, buf);
-}
-
-fn format_balance(value: &str) -> String {
-    if let Ok(v) = value.parse::<f64>() {
-        format!("${:.2}", v)
-    } else {
-        format!("${}", value)
-    }
 }

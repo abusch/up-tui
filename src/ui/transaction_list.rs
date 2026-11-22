@@ -126,10 +126,10 @@ fn build_transaction_item<'a>(
     // Right-align the amount, measuring in terminal columns (not bytes or chars).
     let padding = inner_width.saturating_sub(truncated_desc.width() + amount_width);
 
-    let amount_style = if txn.amount.value_in_base_units >= 0 {
-        palette.color(tokens::SUCCESS)
-    } else {
+    let amount_style = if txn.amount.is_negative() {
         palette.color(tokens::CODE_NUMBER)
+    } else {
+        palette.color(tokens::SUCCESS)
     };
 
     let line1 = Line::from(vec![

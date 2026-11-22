@@ -84,14 +84,36 @@ pub struct MoneyObject {
     pub value_in_base_units: i64,
 }
 
+// The formatting methods take the sign from `value_in_base_units` and the digits from
+// the API's `value` string (e.g. "10.56"), which is already formatted with the right
+// number of decimal places for the currency. No floating point is involved.
 impl MoneyObject {
-    /// Format as a dollar amount.
-    /// Positive values get a `+` prefix and negatives show as `$1.23`.
+    pub fn is_negative(&self) -> bool {
+        self.value_in_base_units < 0
+    }
+
+    /// The amount without its sign, e.g. `"10.56"`.
+    fn magnitude(&self) -> &str {
+        self.value.strip_prefix('-').unwrap_or(&self.value)
+    }
+
+    /// A transaction amount in dollars: credits get a `+` prefix and debits have no
+    /// sign, since the UI distinguishes them by colour (`+$10.56`, `$10.56`).
     pub fn format_display(&self) -> String {
-        let cents = self.value_in_base_units;
-        let abs = (cents.unsigned_abs() as f64) / 100.0;
-        let sign = if cents >= 0 { "+" } else { "" };
-        format!("{sign}${abs:.2}")
+        let sign = if self.is_negative() { "" } else { "+" };
+        format!("{sign}${}", self.magnitude())
+    }
+
+    /// A signed amount in dollars, e.g. for balances (`$10.56`, `-$10.56`).
+    pub fn format_signed(&self) -> String {
+        let sign = if self.is_negative() { "-" } else { "" };
+        format!("{sign}${}", self.magnitude())
+    }
+
+    /// A signed amount with its currency code, for foreign currencies (`-10.56 USD`).
+    pub fn format_with_code(&self) -> String {
+        let sign = if self.is_negative() { "-" } else { "" };
+        format!("{sign}{} {}", self.magnitude(), self.currency_code)
     }
 }
 
@@ -279,5 +301,47 @@ impl From<Resource<TransactionAttributes, TransactionRelationships>> for Transac
             parent_category,
             tags,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MoneyObject;
+
+    fn money(value: &str, base_units: i64, currency: &str) -> MoneyObject {
+        MoneyObject {
+            currency_code: currency.to_string(),
+            value: value.to_string(),
+            value_in_base_units: base_units,
+        }
+    }
+
+    #[test]
+    fn format_display_marks_credits_only() {
+        assert_eq!(money("10.56", 1056, "AUD").format_display(), "+$10.56");
+        assert_eq!(money("-10.56", -1056, "AUD").format_display(), "$10.56");
+        assert_eq!(money("0.00", 0, "AUD").format_display(), "+$0.00");
+    }
+
+    #[test]
+    fn format_signed_puts_the_sign_before_the_dollar() {
+        assert_eq!(money("1234.50", 123450, "AUD").format_signed(), "$1234.50");
+        assert_eq!(money("-12.30", -1230, "AUD").format_signed(), "-$12.30");
+    }
+
+    #[test]
+    fn format_with_code_keeps_the_currency_precision() {
+        assert_eq!(
+            money("-12.50", -1250, "USD").format_with_code(),
+            "-12.50 USD"
+        );
+        // Yen have no minor unit: base units are whole yen.
+        assert_eq!(money("-1500", -1500, "JPY").format_with_code(), "-1500 JPY");
+    }
+
+    #[test]
+    fn large_amounts_are_exact() {
+        let m = money("90071992547409.93", 9007199254740993, "AUD");
+        assert_eq!(m.format_signed(), "$90071992547409.93");
     }
 }
