@@ -1,4 +1,3 @@
-pub mod error;
 pub mod models;
 
 use http_cache_reqwest::{Cache, CacheMode, HttpCache, HttpCacheOptions, MokaManager};
@@ -7,8 +6,8 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use serde::de::DeserializeOwned;
 
-use error::Result;
 use models::*;
+use rootcause::{Result, prelude::*};
 
 const BASE_URL: &str = "https://api.up.com.au/api/v1";
 
@@ -21,9 +20,12 @@ impl UpClient {
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", token))?,
+            HeaderValue::from_str(&format!("Bearer {}", token)).context("Invalid API token")?,
         );
-        let client = Client::builder().default_headers(headers).build()?;
+        let client = Client::builder()
+            .default_headers(headers)
+            .build()
+            .context("Failed to create the HTTP client")?;
         let client = ClientBuilder::new(client)
             .with(Cache(HttpCache {
                 mode: CacheMode::Default,

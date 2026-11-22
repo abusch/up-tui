@@ -91,7 +91,6 @@ src/
 
   client/
     mod.rs             UpClient: Bearer auth, HTTP cache middleware, account/transaction/category endpoints
-    error.rs           Client Error enum (thiserror) and Result alias
     models.rs          JSON:API envelope types, relationship types, domain structs, money formatting
 
   app/
@@ -119,7 +118,7 @@ src/
 - Transaction relationships (category, parentCategory, tags) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs
 - `GET /categories` is called once on startup to populate the category ID → display name cache in `AppState`. The detail pane resolves IDs to names via `state.category_name()`, falling back to the raw ID if the cache hasn't loaded yet
 - Categories are hierarchical. The detail pane displays them on a single line as "Parent / Category" (e.g. "Good Life / Restaurants & Cafes")
-- Client errors are `client::error::Error` (thiserror), carried as-is in `AppEvent` results and shown in toasts via their `Display`. `rootcause` is only used for top-level errors that end the program (`main`, `config`, `App::new`/`App::run`)
+- All errors are `rootcause` reports (`rootcause::Result`); there are no custom error types. Client methods return the underlying `reqwest`/`reqwest-middleware` errors as reports, which `AppEvent` results carry as-is. Toasts show only the report's top-level message (`report.format_current_context()`), not the full report, whose `Display` is a multi-line tree with source locations; that full form is only printed for errors that end the program (`main`, `config`, `App::new`/`App::run`)
 
 ## Key Bindings
 

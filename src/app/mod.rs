@@ -110,7 +110,10 @@ impl App {
                         self.ensure_transactions_loaded();
                     }
                     Err(e) => {
-                        self.error(format!("Failed to load accounts: {}", e));
+                        self.error(format!(
+                            "Failed to load accounts: {}",
+                            e.format_current_context()
+                        ));
                     }
                 }
             }
@@ -120,7 +123,10 @@ impl App {
                     self.state.categories = categories.into_iter().collect();
                 }
                 Err(e) => {
-                    self.error(format!("Failed to load categories: {}", e));
+                    self.error(format!(
+                        "Failed to load categories: {}",
+                        e.format_current_context()
+                    ));
                 }
             },
             AppEvent::TransactionsLoaded {
@@ -148,7 +154,10 @@ impl App {
                         self.success("Transactions loaded");
                     }
                     Err(e) => {
-                        self.error(format!("Failed to load transactions: {}", e));
+                        self.error(format!(
+                            "Failed to load transactions: {}",
+                            e.format_current_context()
+                        ));
                     }
                 }
             }
