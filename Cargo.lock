@@ -3168,6 +3168,7 @@ dependencies = [
  "rootcause",
  "serde",
  "serde_json",
+ "textwrap",
  "tokio",
  "toml 1.2.2+spec-1.1.0",
  "unicode-width",

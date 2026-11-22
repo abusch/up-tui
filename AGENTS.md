@@ -46,7 +46,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 
 - `tabs` — one `TabState` per account, in API order
 - `active_tab` — currently selected tab index
-- `mode` — `AppMode::Normal`, or `AppMode::Theme(ThemeSelectorState)` while the theme picker is open
+- `mode` — `AppMode::Normal`, `AppMode::Detail` while the detail popup is open, or `AppMode::Theme(ThemeSelectorState)` while the theme picker is open
 - `accounts_generation` — incremented for every accounts fetch; stale `AccountsLoaded` results are dropped
 - `categories` — cached `HashMap<String, String>` mapping category IDs to display names, fetched once on startup via `GET /categories`
 - `theme` — the current theme, an `Arc<opaline::Theme>` that is always opaline's global theme (`opaline::current()`); see Theming
@@ -80,7 +80,9 @@ Status messages (loading, success, errors) are shown as toasts in the top-right 
 
 ### Rendering
 
-`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the tab bar, the transaction list (and the detail pane on the right, taking one third of the width, when `show_detail` is set), the status bar, toasts, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size`, updates each tab's `list_state`, and updates the toast area.
+`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the tab bar, the transaction list (and the detail pane on the right, taking one third of the width, when `show_detail` is set), the status bar, the detail popup when in `AppMode::Detail`, toasts, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size`, updates each tab's `list_state`, and updates the toast area.
+
+The detail pane and the detail popup (both in `src/ui/transaction_detail.rs`) show the same content, built by `detail_lines()`, for `state.selected_transaction()`. The popup is centred, at most 72 columns wide, and shrinks to the height of its content; it draws nothing if no transaction is selected. The content has a header (description, amount with the status right-aligned, category, tags) followed by sections (When, Details, Note, Message, Raw text) that are left out when empty. Redundant information is hidden: the hold amount when it equals the final amount, and the raw text when it matches the description. Its lines are wrapped to the pane's width by `textwrap` (first-fit), with long field values indented to the value column, so the `Paragraph` is rendered without its own wrapping. Dates are shown as "Today, 14:32", "Yesterday, …" or "Mon 18 Nov, …" (with the year only if it isn't the current one).
 
 ## Project Structure
 
@@ -102,8 +104,8 @@ src/
     mod.rs             Top-level layout (Widget impl for App), theme picker overlay
     tabs.rs            Tab bar showing account names and balances
     transaction_list.rs  Transaction list grouped by day, description truncation
-    transaction_detail.rs  Detail pane with full transaction info
-    status_bar.rs      Keybinding hints
+    transaction_detail.rs  Detail pane and popup with full transaction info
+    status_bar.rs      Keybinding hints, per mode
     toast.rs           Toast drawing in theme colours
 ```
 
@@ -114,10 +116,10 @@ src/
 - The client is wrapped with `reqwest-middleware` and `http-cache-reqwest` (in-memory Moka cache, `CacheMode::Default`). Endpoint methods take a `reload` flag; when set, the request uses `CacheMode::Reload` (bypass the cache, update it with the response). It is used for user-initiated refreshes.
 - `get_accounts` and `get_transactions` take `PaginationOptions` (page size 50, or a `next_url` from a previous response) and return `PaginatedResponse { data, next_page_url }`
 - `Resource<A, R>` is generic over attributes (`A`) and relationships (`R`, defaults to `serde_json::Value`)
-- Format money with the `MoneyObject` methods: `format_display()` for transaction amounts (`+$10.56` for credits, `$10.56` for debits, which are distinguished by colour), `format_signed()` for balances (`-$10.56`), and `format_with_code()` for foreign currencies (`-10.56 USD`). They take the sign from `value_in_base_units` and the digits from the API's `value` string; don't parse `value` as a float or assume two decimal places for foreign currencies
-- Transaction relationships (category, parentCategory, tags) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs
+- Format money with the `MoneyObject` methods: `format_display()` for transaction amounts (`+$10.56` for credits, `$10.56` for debits, which are distinguished by colour), `format_signed()` for balances (`-$10.56`), and `format_display_with_code()` for foreign currencies (`+10.56 USD` / `10.56 USD`, signed like `format_display()`). They take the sign from `value_in_base_units` and the digits from the API's `value` string; don't parse `value` as a float or assume two decimal places for foreign currencies
+- Transaction relationships (category, parentCategory, tags, transferAccount) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs. The detail pane resolves the transfer account's name from the loaded accounts via `state.account_name()`
 - `GET /categories` is called once on startup to populate the category ID → display name cache in `AppState`. The detail pane resolves IDs to names via `state.category_name()`, falling back to the raw ID if the cache hasn't loaded yet
-- Categories are hierarchical. The detail pane displays them on a single line as "Parent / Category" (e.g. "Good Life / Restaurants & Cafes")
+- Categories are hierarchical. The detail pane displays them on a single line as "Parent › Category" (e.g. "Good Life › Restaurants & Cafes")
 - All errors are `rootcause` reports (`rootcause::Result`); there are no custom error types. Client methods return the underlying `reqwest`/`reqwest-middleware` errors as reports, which `AppEvent` results carry as-is. Toasts show only the report's top-level message (`report.format_current_context()`), not the full report, whose `Display` is a multi-line tree with source locations; that full form is only printed for errors that end the program (`main`, `config`, `App::new`/`App::run`)
 
 ## Key Bindings
@@ -132,7 +134,11 @@ src/
 | `Ctrl+D` / `Ctrl+U` | Normal       | Page down / up                              |
 | `g` / `G`           | Normal       | Jump to top / bottom of the loaded list     |
 | `[` / `]`           | Normal       | Jump to the start of the day group above / below (the list is newest first) |
+| `Enter`             | Normal       | Open the detail popup (if a transaction is selected) |
 | `o`                 | Normal       | Toggle the detail pane                      |
+| `Esc` / `Enter` / `q` | Detail popup | Close the popup                           |
+| `Ctrl+C`            | Detail popup | Quit                                        |
+| navigation keys     | Detail popup | As in Normal mode (`j`/`k`, `Ctrl+D`/`Ctrl+U`, `g`/`G`, `[`/`]`); the popup shows the newly selected transaction |
 | `r`                 | Normal       | Refresh accounts and the current tab        |
 | `t`                 | Normal       | Open the theme picker                       |
 | `↑` / `↓`           | Theme picker | Move selection                              |
@@ -140,7 +146,7 @@ src/
 | `Enter`             | Theme picker | Apply the selected theme                    |
 | `Esc`               | Theme picker | Close without changing the theme            |
 
-Key handling lives in `App::handle_normal_key` and `App::handle_key` (which delegates to `ThemeSelectorState::handle_key` in theme mode). Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. After every Normal-mode key, `maybe_fetch_next_page()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` should be kept in sync with the bindings.
+Key handling lives in `App::handle_key`, which dispatches on the mode to `App::handle_normal_key`, `App::handle_detail_key`, or `ThemeSelectorState::handle_key`. The navigation keys, shared by Normal mode and the detail popup, are in `App::handle_navigation_key`. Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. After every Normal-mode or detail-popup key, `maybe_fetch_next_page()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` (one list per mode) should be kept in sync with the bindings.
 
 ## Theming
 
@@ -153,11 +159,14 @@ All UI modules read colors from `state.theme` via semantic tokens (`opaline::nam
 - `BG_BASE` / `TEXT_PRIMARY` — base background and foreground, including the tab bar, transaction list and status bar
 - `BG_PANEL` — detail pane background (the transaction list is on `BG_BASE`)
 - `BORDER_UNFOCUSED` — the detail pane's left border, which separates it from the list (some themes use the same colour for `BG_BASE` and `BG_PANEL`)
-- `BG_ELEVATED` — toast and theme picker backgrounds
+- `BG_ELEVATED` — toast, detail popup and theme picker backgrounds
+- `BORDER_FOCUSED` — the detail popup's border
 - `BG_SELECTION` — selected row background
-- `ACCENT_PRIMARY` — active tab, list and detail pane titles, selection marker
-- `TEXT_MUTED` — inactive tabs; `TEXT_DIM` — day separators, times, status bar text
-- `TEXT_SECONDARY` — field labels in the detail pane
+- `ACCENT_PRIMARY` — active tab, list, detail pane and popup titles, selection marker
+- `TEXT_MUTED` — inactive tabs, foreign amounts and raw text in the detail pane; `TEXT_DIM` — day separators, detail pane section headings, times, status bar text
+- `TEXT_SECONDARY` — field labels in the detail pane; tag text
+- `ACCENT_SECONDARY` — the category in the detail pane header
+- `BG_HIGHLIGHT` — tag backgrounds in the detail pane
 - Amounts: `TEXT_PRIMARY` for debits, `SUCCESS` for credits
 - `SUCCESS` / `WARNING` — settled / pending (held) status
 - `INFO` — keybinding hints in the status bar

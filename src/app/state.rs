@@ -9,6 +9,8 @@ use crate::client::models::{Account, Transaction};
 
 pub enum AppMode {
     Normal,
+    /// The selected transaction's details are shown in a popup.
+    Detail,
     Theme(ThemeSelectorState),
 }
 
@@ -243,6 +245,12 @@ impl AppState {
         self.tabs.get(self.active_tab)
     }
 
+    /// The selected transaction in the active tab, if any.
+    pub fn selected_transaction(&self) -> Option<&Transaction> {
+        let tab = self.current_tab()?;
+        tab.transactions.as_ref()?.get(tab.selected)
+    }
+
     pub fn current_tab_mut(&mut self) -> Option<&mut TabState> {
         self.tabs.get_mut(self.active_tab)
     }
@@ -265,6 +273,14 @@ impl AppState {
 
     pub fn category_name<'a>(&'a self, id: &'a str) -> &'a str {
         self.categories.get(id).map(|s| s.as_str()).unwrap_or(id)
+    }
+
+    /// Display name of one of the user's accounts, falling back to the id if it isn't
+    /// loaded.
+    pub fn account_name<'a>(&'a self, id: &'a str) -> &'a str {
+        self.tab_index(id)
+            .map(|i| self.tabs[i].account.display_name.as_str())
+            .unwrap_or(id)
     }
 }
 
@@ -303,6 +319,7 @@ pub(crate) mod tests {
             category: None,
             parent_category: None,
             tags: Vec::new(),
+            transfer_account: None,
         }
     }
 

@@ -55,6 +55,9 @@ pub struct TransactionRelationships {
     pub parent_category: Option<ToOneRelationship>,
     #[serde(default)]
     pub tags: Option<ToManyRelationship>,
+    /// The other account of a transfer between the user's own accounts.
+    #[serde(default)]
+    pub transfer_account: Option<ToOneRelationship>,
 }
 
 // --- Category types ---
@@ -76,7 +79,7 @@ pub struct AccountAttributes {
     pub created_at: Timestamp,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MoneyObject {
     pub currency_code: String,
@@ -110,9 +113,10 @@ impl MoneyObject {
         format!("{sign}${}", self.magnitude())
     }
 
-    /// A signed amount with its currency code, for foreign currencies (`-10.56 USD`).
-    pub fn format_with_code(&self) -> String {
-        let sign = if self.is_negative() { "-" } else { "" };
+    /// A foreign currency amount with its currency code, signed like
+    /// `format_display` (`+10.56 USD` for credits, `10.56 USD` for debits).
+    pub fn format_display_with_code(&self) -> String {
+        let sign = if self.is_negative() { "" } else { "+" };
         format!("{sign}{} {}", self.magnitude(), self.currency_code)
     }
 }
@@ -160,7 +164,7 @@ pub struct CardPurchaseMethod {
     pub card_number_suffix: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HoldInfo {
     pub amount: MoneyObject,
@@ -260,6 +264,8 @@ pub struct Transaction {
     pub category: Option<String>,
     pub parent_category: Option<String>,
     pub tags: Vec<String>,
+    /// Account id of the other side of a transfer between the user's own accounts.
+    pub transfer_account: Option<String>,
 }
 
 impl From<Resource<TransactionAttributes, TransactionRelationships>> for Transaction {
@@ -279,6 +285,11 @@ impl From<Resource<TransactionAttributes, TransactionRelationships>> for Transac
             .tags
             .map(|rel| rel.data.into_iter().map(|d| d.id).collect())
             .unwrap_or_default();
+        let transfer_account = r
+            .relationships
+            .transfer_account
+            .and_then(|rel| rel.data)
+            .map(|d| d.id);
 
         Transaction {
             id: r.id,
@@ -300,6 +311,7 @@ impl From<Resource<TransactionAttributes, TransactionRelationships>> for Transac
             category,
             parent_category,
             tags,
+            transfer_account,
         }
     }
 }
@@ -330,13 +342,20 @@ mod tests {
     }
 
     #[test]
-    fn format_with_code_keeps_the_currency_precision() {
+    fn format_display_with_code_keeps_the_currency_precision() {
         assert_eq!(
-            money("-12.50", -1250, "USD").format_with_code(),
-            "-12.50 USD"
+            money("-12.50", -1250, "USD").format_display_with_code(),
+            "12.50 USD"
+        );
+        assert_eq!(
+            money("12.50", 1250, "USD").format_display_with_code(),
+            "+12.50 USD"
         );
         // Yen have no minor unit: base units are whole yen.
-        assert_eq!(money("-1500", -1500, "JPY").format_with_code(), "-1500 JPY");
+        assert_eq!(
+            money("-1500", -1500, "JPY").format_display_with_code(),
+            "1500 JPY"
+        );
     }
 
     #[test]

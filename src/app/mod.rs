@@ -173,6 +173,7 @@ impl App {
     fn handle_key(&mut self, key: KeyEvent) {
         match self.state.mode {
             AppMode::Normal => self.handle_normal_key(key),
+            AppMode::Detail => self.handle_detail_key(key),
             AppMode::Theme(ref mut selector) => {
                 let action = selector.handle_key(key);
                 // The picker previews the highlighted theme (and applies the chosen one,
@@ -209,6 +210,53 @@ impl App {
                     self.info("Loading transactions...");
                 }
             }
+            KeyCode::Enter => {
+                if self.state.selected_transaction().is_some() {
+                    self.state.mode = AppMode::Detail;
+                }
+            }
+            KeyCode::Char('o') => {
+                self.state.show_detail = !self.state.show_detail;
+            }
+            KeyCode::Char('r') => {
+                // Re-fetch accounts too: this refreshes balances, and recovers if the
+                // initial accounts load failed (in which case there are no tabs yet).
+                if self.state.tabs.is_empty() {
+                    self.info("Loading accounts...");
+                }
+                self.fetch_accounts(true);
+                let idx = self.state.active_tab;
+                self.fetch_transactions(idx, LoadKind::Replace, None, true);
+            }
+            KeyCode::Char('t') => {
+                self.state.mode = AppMode::Theme(ThemeSelectorState::with_current_selected());
+            }
+            _ => self.handle_navigation_key(key),
+        }
+
+        // If navigation brought the selection near the end of what's loaded, fetch more.
+        self.maybe_fetch_next_page();
+    }
+
+    /// Keys while the detail popup is open: it can be closed, and the navigation keys
+    /// move through the transactions, with the popup showing the selected one.
+    fn handle_detail_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('Q') => {
+                self.state.mode = AppMode::Normal;
+            }
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.state.should_quit = true;
+            }
+            _ => self.handle_navigation_key(key),
+        }
+
+        self.maybe_fetch_next_page();
+    }
+
+    /// Keys that move the selection in the active tab's transaction list.
+    fn handle_navigation_key(&mut self, key: KeyEvent) {
+        match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.navigate(TabState::select_next),
             KeyCode::Char('k') | KeyCode::Up => self.navigate(TabState::select_prev),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -229,27 +277,8 @@ impl App {
                 let tz = self.state.tz.clone();
                 self.navigate(|tab| tab.select_next_day(&tz));
             }
-            KeyCode::Char('o') => {
-                self.state.show_detail = !self.state.show_detail;
-            }
-            KeyCode::Char('r') => {
-                // Re-fetch accounts too: this refreshes balances, and recovers if the
-                // initial accounts load failed (in which case there are no tabs yet).
-                if self.state.tabs.is_empty() {
-                    self.info("Loading accounts...");
-                }
-                self.fetch_accounts(true);
-                let idx = self.state.active_tab;
-                self.fetch_transactions(idx, LoadKind::Replace, None, true);
-            }
-            KeyCode::Char('t') => {
-                self.state.mode = AppMode::Theme(ThemeSelectorState::with_current_selected());
-            }
             _ => {}
         }
-
-        // If navigation brought the selection near the end of what's loaded, fetch more.
-        self.maybe_fetch_next_page();
     }
 
     /// Apply a navigation action to the active tab, if there is one.

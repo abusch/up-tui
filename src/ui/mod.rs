@@ -46,6 +46,10 @@ impl Widget for &mut App {
 
         status_bar::draw_status_bar(buf, chunks[2], &self.state);
 
+        if let AppMode::Detail = self.state.mode {
+            transaction_detail::draw_detail_popup(buf, area, &self.state);
+        }
+
         self.render_toasts(area, buf);
 
         if let AppMode::Theme(ref mut state) = self.state.mode {

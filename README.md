@@ -60,9 +60,12 @@ Or build from source with `cargo run`.
 | `Ctrl+D` / `Ctrl+U`    | Page down / up                           |
 | `g` / `G`              | Jump to top / bottom                     |
 | `[` / `]`              | Jump to the day above / below            |
+| `Enter`                | Show the transaction's details in a popup |
 | `o`                    | Toggle the transaction detail pane       |
 | `r`                    | Refresh accounts and transactions        |
 | `t`                    | Open the theme picker                    |
 | `q` / `Ctrl+C`         | Quit                                     |
+
+In the details popup, the navigation keys move to other transactions, and `Esc`, `Enter` or `q` close it.
 
 In the theme picker, use `Up` / `Down` to move (the whole UI previews the highlighted theme), type to filter, `Enter` to apply the theme, and `Esc` to close without changing it. The chosen theme isn't saved; set `theme` in the config file to make it permanent.
