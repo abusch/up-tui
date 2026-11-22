@@ -113,6 +113,43 @@ impl MoneyObject {
         format!("{sign}${}", self.magnitude())
     }
 
+    /// The sum of `amounts`, or `None` if there are none, they aren't all in the same
+    /// currency with the same number of decimal places, or the sum overflows.
+    pub fn sum<'a>(amounts: impl IntoIterator<Item = &'a MoneyObject>) -> Option<MoneyObject> {
+        let mut amounts = amounts.into_iter();
+        let first = amounts.next()?;
+        let decimals = first.decimals();
+        let mut total = first.value_in_base_units;
+        for amount in amounts {
+            if amount.currency_code != first.currency_code || amount.decimals() != decimals {
+                return None;
+            }
+            total = total.checked_add(amount.value_in_base_units)?;
+        }
+
+        let sign = if total < 0 { "-" } else { "" };
+        let magnitude = total.unsigned_abs();
+        let value = match decimals {
+            0 => format!("{sign}{magnitude}"),
+            _ => {
+                let unit = 10u64.checked_pow(u32::try_from(decimals).ok()?)?;
+                format!("{sign}{}.{:0decimals$}", magnitude / unit, magnitude % unit)
+            }
+        };
+        Some(MoneyObject {
+            currency_code: first.currency_code.clone(),
+            value,
+            value_in_base_units: total,
+        })
+    }
+
+    /// Number of decimal places in the API's `value` string.
+    fn decimals(&self) -> usize {
+        self.value
+            .split_once('.')
+            .map_or(0, |(_, fraction)| fraction.len())
+    }
+
     /// A foreign currency amount with its currency code, signed like
     /// `format_display` (`+10.56 USD` for credits, `10.56 USD` for debits).
     pub fn format_display_with_code(&self) -> String {
@@ -230,6 +267,19 @@ pub struct Account {
     pub display_name: String,
     pub account_type: String,
     pub balance: MoneyObject,
+}
+
+impl Account {
+    /// Sort key for showing accounts grouped by type: spending accounts, then savers,
+    /// then home loans, then anything else.
+    pub fn type_order(&self) -> u8 {
+        match self.account_type.as_str() {
+            "TRANSACTIONAL" => 0,
+            "SAVER" => 1,
+            "HOME_LOAN" => 2,
+            _ => 3,
+        }
+    }
 }
 
 impl From<Resource<AccountAttributes>> for Account {
@@ -355,6 +405,30 @@ mod tests {
         assert_eq!(
             money("-1500", -1500, "JPY").format_display_with_code(),
             "1500 JPY"
+        );
+    }
+
+    #[test]
+    fn sum_adds_base_units_and_keeps_the_precision() {
+        let total = MoneyObject::sum(&[
+            money("1234.56", 123456, "AUD"),
+            money("-1300.00", -130000, "AUD"),
+            money("0.05", 5, "AUD"),
+        ])
+        .unwrap();
+        assert_eq!(total.value, "-65.39");
+        assert_eq!(total.value_in_base_units, -6539);
+        assert_eq!(total.format_signed(), "-$65.39");
+
+        let yen = MoneyObject::sum(&[money("1500", 1500, "JPY"), money("20", 20, "JPY")]);
+        assert_eq!(yen.unwrap().value, "1520");
+    }
+
+    #[test]
+    fn sum_requires_a_single_currency() {
+        assert!(MoneyObject::sum(&[]).is_none());
+        assert!(
+            MoneyObject::sum(&[money("1.00", 100, "AUD"), money("1.00", 100, "USD")]).is_none()
         );
     }
 

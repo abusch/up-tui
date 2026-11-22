@@ -16,7 +16,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let selection = state.theme.color(tokens::BG_SELECTION).into();
 
     let base_style = Style::default().fg(fg).bg(bg);
-    let block = |title: &'static str| {
+    let block = |title: String| {
         Block::default()
             .title(title)
             .title_style(accent)
@@ -27,44 +27,34 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     // Record how many transactions fit in the list, for Ctrl+D/Ctrl+U paging and for
     // deciding when to load the next page. Each transaction item is 2 rows tall; day
     // separator rows are ignored, so this is an upper bound.
-    state.page_size = usize::from(block(" Transactions ").inner(area).height / 2);
+    state.page_size = usize::from(block(String::new()).inner(area).height / 2);
 
-    let title;
-    let transactions = match state.current_tab() {
-        Some(tab) if tab.loading.is_some() && tab.transactions.is_none() => {
-            title = " Transactions - Loading... ";
-            None
-        }
-        Some(tab) => match &tab.transactions {
-            Some(txns) if !txns.is_empty() => {
-                title = match tab.loading {
-                    Some(LoadKind::Replace) => " Transactions - Refreshing... ",
-                    Some(LoadKind::Append) => " Transactions - Loading more... ",
-                    None => " Transactions ",
-                };
-                Some(txns)
+    // The title names the account (there are no tabs, and the sidebar can be hidden),
+    // followed by the loading status.
+    let (name, status, transactions) = match state.current_tab() {
+        None => ("Transactions", "", None),
+        Some(tab) => {
+            let name = tab.account.display_name.as_str();
+            match (&tab.transactions, tab.loading) {
+                (None, Some(_)) => (name, " - Loading...", None),
+                (Some(txns), loading) if !txns.is_empty() => {
+                    let status = match loading {
+                        Some(LoadKind::Replace) => " - Refreshing...",
+                        Some(LoadKind::Append) => " - Loading more...",
+                        None => "",
+                    };
+                    (name, status, Some(txns))
+                }
+                (Some(_), _) => (name, " - No transactions", None),
+                (None, None) => (name, "", None),
             }
-            Some(_) => {
-                title = " Transactions - No transactions ";
-                None
-            }
-            None => {
-                title = " Transactions ";
-                None
-            }
-        },
-        None => {
-            title = " Transactions ";
-            None
         }
     };
+    let title = format!(" {name}{status} ");
 
-    let transactions = match transactions {
-        Some(txns) => txns,
-        None => {
-            block(title).render(area, buf);
-            return;
-        }
+    let Some(transactions) = transactions else {
+        block(title).render(area, buf);
+        return;
     };
 
     // 2 for horizontal padding + 2 for highlight symbol ("▎ ")
@@ -144,7 +134,7 @@ fn build_transaction_item<'a>(
 }
 
 /// Truncate `s` to at most `max_width` terminal columns, appending `…` if anything was cut.
-fn truncate_to_width(s: &str, max_width: usize) -> String {
+pub(super) fn truncate_to_width(s: &str, max_width: usize) -> String {
     if s.width() <= max_width {
         return s.to_string();
     }

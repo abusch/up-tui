@@ -218,6 +218,9 @@ impl App {
             KeyCode::Char('o') => {
                 self.state.show_detail = !self.state.show_detail;
             }
+            KeyCode::Char('s') => {
+                self.state.show_sidebar = !self.state.show_sidebar;
+            }
             KeyCode::Char('r') => {
                 // Re-fetch accounts too: this refreshes balances, and recovers if the
                 // initial accounts load failed (in which case there are no tabs yet).

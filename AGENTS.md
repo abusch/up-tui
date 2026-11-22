@@ -4,7 +4,7 @@ A terminal UI application for viewing Up Banking accounts and transactions.
 
 ## Overview
 
-up-tui connects to the [Up Banking API](https://developer.up.com.au/) and presents accounts as tabs with their transactions in a navigable list, plus an optional detail pane. Built with ratatui for rendering, opaline for theming, and tokio + reqwest for async HTTP. The binary is named `up`.
+up-tui connects to the [Up Banking API](https://developer.up.com.au/) and presents accounts in a sidebar, with the selected account's transactions in a navigable list, plus an optional detail pane. Built with ratatui for rendering, opaline for theming, and tokio + reqwest for async HTTP. The binary is named `up`.
 
 ## Configuration
 
@@ -44,14 +44,15 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 
 `AppState` (`src/app/state.rs`) holds:
 
-- `tabs` — one `TabState` per account, in API order
-- `active_tab` — currently selected tab index
+- `tabs` — one `TabState` per account, grouped by account type (spending, savers, home loans, others; see `Account::type_order`) and otherwise in API order. The sidebar shows them in this order, and next/previous account follow it. (They're called tabs for historical reasons: there's no tab bar any more.)
+- `active_tab` — index of the selected account's tab
 - `mode` — `AppMode::Normal`, `AppMode::Detail` while the detail popup is open, or `AppMode::Theme(ThemeSelectorState)` while the theme picker is open
 - `accounts_generation` — incremented for every accounts fetch; stale `AccountsLoaded` results are dropped
 - `categories` — cached `HashMap<String, String>` mapping category IDs to display names, fetched once on startup via `GET /categories`
 - `theme` — the current theme, an `Arc<opaline::Theme>` that is always opaline's global theme (`opaline::current()`); see Theming
 - `tz` — the local `jiff` time zone, looked up once at startup; used for displaying times and grouping transactions by day (don't call `TimeZone::system()` elsewhere)
 - `show_detail` — whether the detail pane is visible
+- `show_sidebar` — whether the account sidebar is visible (it is by default)
 - `page_size` — how many transactions fit in the list view (computed from the list block's inner area, 2 rows per item); written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
 
 `TabState` holds:
@@ -80,7 +81,9 @@ Status messages (loading, success, errors) are shown as toasts in the top-right 
 
 ### Rendering
 
-`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the tab bar, the transaction list (and the detail pane on the right, taking one third of the width, when `show_detail` is set), the status bar, the detail popup when in `AppMode::Detail`, toasts, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size`, updates each tab's `list_state`, and updates the toast area.
+`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the account sidebar on the left (when `show_sidebar` is set), the transaction list (and the detail pane on the right, taking one third of the screen's width, when `show_detail` is set; the list takes whatever is left), the status bar, the detail popup when in `AppMode::Detail`, toasts, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size`, updates each tab's `list_state`, and updates the toast area.
+
+The sidebar (`src/ui/sidebar.rs`) lists the accounts under a heading per account type, each with its balance right-aligned, the selected one highlighted like the selected transaction, and the total of all balances at the bottom (when there's more than one account and `MoneyObject::sum` can add them up, i.e. they're in the same currency). Its width fits the longest row, between 20 and 40 columns and at most a third of the screen; longer names are truncated. The transaction list's title is the selected account's name, so you can tell which account is shown when the sidebar is hidden.
 
 The detail pane and the detail popup (both in `src/ui/transaction_detail.rs`) show the same content, built by `detail_lines()`, for `state.selected_transaction()`. The popup is centred, at most 72 columns wide, and shrinks to the height of its content; it draws nothing if no transaction is selected. The content has a header (description, amount with the status right-aligned, category, tags) followed by sections (When, Details, Note, Message, Raw text) that are left out when empty. Redundant information is hidden: the hold amount when it equals the final amount, and the raw text when it matches the description. Its lines are wrapped to the pane's width by `textwrap` (first-fit), with long field values indented to the value column, so the `Paragraph` is rendered without its own wrapping. Dates are shown as "Today, 14:32", "Yesterday, …" or "Mon 18 Nov, …" (with the year only if it isn't the current one).
 
@@ -102,7 +105,7 @@ src/
 
   ui/
     mod.rs             Top-level layout (Widget impl for App), theme picker overlay
-    tabs.rs            Tab bar showing account names and balances
+    sidebar.rs         Account sidebar: accounts grouped by type, balances, total
     transaction_list.rs  Transaction list grouped by day, description truncation
     transaction_detail.rs  Detail pane and popup with full transaction info
     status_bar.rs      Keybinding hints, per mode
@@ -127,8 +130,8 @@ src/
 | Key                 | Mode         | Action                                      |
 |---------------------|--------------|---------------------------------------------|
 | `q` / `Q` / `Ctrl+C`| Normal       | Quit                                        |
-| `Tab` / `l`         | Normal       | Next tab                                    |
-| `Shift+Tab` / `h`   | Normal       | Previous tab                                |
+| `Tab` / `l`         | Normal       | Next account                                |
+| `Shift+Tab` / `h`   | Normal       | Previous account                            |
 | `j` / `↓`           | Normal       | Next transaction                            |
 | `k` / `↑`           | Normal       | Previous transaction                        |
 | `Ctrl+D` / `Ctrl+U` | Normal       | Page down / up                              |
@@ -136,10 +139,11 @@ src/
 | `[` / `]`           | Normal       | Jump to the start of the day group above / below (the list is newest first) |
 | `Enter`             | Normal       | Open the detail popup (if a transaction is selected) |
 | `o`                 | Normal       | Toggle the detail pane                      |
+| `s`                 | Normal       | Toggle the account sidebar                  |
 | `Esc` / `Enter` / `q` | Detail popup | Close the popup                           |
 | `Ctrl+C`            | Detail popup | Quit                                        |
 | navigation keys     | Detail popup | As in Normal mode (`j`/`k`, `Ctrl+D`/`Ctrl+U`, `g`/`G`, `[`/`]`); the popup shows the newly selected transaction |
-| `r`                 | Normal       | Refresh accounts and the current tab        |
+| `r`                 | Normal       | Refresh accounts and the current account's transactions |
 | `t`                 | Normal       | Open the theme picker                       |
 | `↑` / `↓`           | Theme picker | Move selection                              |
 | typing / `Backspace`| Theme picker | Filter themes                               |
@@ -156,15 +160,15 @@ The picker (`ThemeSelector`) draws itself with opaline's *global* theme, and pre
 
 All UI modules read colors from `state.theme` via semantic tokens (`opaline::names::tokens`) — no hardcoded colors, and nothing drawn by a third-party widget with its own colours. Use `theme.color(token)`; `theme.line()`/`span()`/`style()` take opaline *style* names (`opaline::names::styles`), not tokens, and silently return an unstyled result for an unknown name. Tokens in use:
 
-- `BG_BASE` / `TEXT_PRIMARY` — base background and foreground, including the tab bar, transaction list and status bar
-- `BG_PANEL` — detail pane background (the transaction list is on `BG_BASE`)
-- `BORDER_UNFOCUSED` — the detail pane's left border, which separates it from the list (some themes use the same colour for `BG_BASE` and `BG_PANEL`)
+- `BG_BASE` / `TEXT_PRIMARY` — base background and foreground, including the transaction list and status bar
+- `BG_PANEL` — sidebar and detail pane background (the transaction list is on `BG_BASE`)
+- `BORDER_UNFOCUSED` — the sidebar's right border and the detail pane's left border, which separate them from the list (some themes use the same colour for `BG_BASE` and `BG_PANEL`)
 - `BG_ELEVATED` — toast, detail popup and theme picker backgrounds
 - `BORDER_FOCUSED` — the detail popup's border
-- `BG_SELECTION` — selected row background
-- `ACCENT_PRIMARY` — active tab, list, detail pane and popup titles, selection marker
-- `TEXT_MUTED` — inactive tabs, foreign amounts and raw text in the detail pane; `TEXT_DIM` — day separators, detail pane section headings, times, status bar text
-- `TEXT_SECONDARY` — field labels in the detail pane; tag text
+- `BG_SELECTION` — selected transaction and account background
+- `ACCENT_PRIMARY` — sidebar, list, detail pane and popup titles, selection markers
+- `TEXT_MUTED` — foreign amounts and raw text in the detail pane; `TEXT_DIM` — day separators, sidebar and detail pane section headings, times, status bar text
+- `TEXT_SECONDARY` — field labels in the detail pane; tag text; the sidebar's total
 - `ACCENT_SECONDARY` — the category in the detail pane header
 - `BG_HIGHLIGHT` — tag backgrounds in the detail pane
 - Amounts: `TEXT_PRIMARY` for debits, `SUCCESS` for credits

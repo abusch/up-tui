@@ -1,5 +1,5 @@
+pub mod sidebar;
 pub mod status_bar;
-pub mod tabs;
 pub mod toast;
 pub mod transaction_detail;
 pub mod transaction_list;
@@ -23,28 +23,36 @@ impl Widget for &mut App {
             .style(Style::default().bg(bg).fg(fg))
             .render(area, buf);
 
-        let chunks = Layout::vertical([
-            Constraint::Length(1), // tab bar
-            Constraint::Fill(1),   // main content
-            Constraint::Length(1), // status bar
-        ])
-        .split(area);
+        let [main, status] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
 
-        tabs::draw_tabs(buf, chunks[0], &self.state);
+        // Account sidebar on the left, if shown.
+        let main = if self.state.show_sidebar {
+            let width = sidebar::sidebar_width(&self.state, main.width);
+            let [sidebar_area, rest] =
+                Layout::horizontal([Constraint::Length(width), Constraint::Fill(1)]).areas(main);
+            sidebar::draw_sidebar(buf, sidebar_area, &self.state);
+            rest
+        } else {
+            main
+        };
 
         if self.state.show_detail {
-            // Split main content horizontally: transaction list (left) + detail pane (right)
-            let content = Layout::horizontal([Constraint::Fill(2), Constraint::Fill(1)])
-                .spacing(Spacing::Overlap(1))
-                .split(chunks[1]);
+            // Split the rest horizontally: transaction list (left) + detail pane (right).
+            // The pane takes a third of the screen's width, not of what the sidebar
+            // leaves, so that it stays wide enough to read; the list gets the rest.
+            let [list, detail] =
+                Layout::horizontal([Constraint::Fill(1), Constraint::Length(area.width / 3)])
+                    .spacing(Spacing::Overlap(1))
+                    .areas(main);
 
-            transaction_list::draw_transaction_list(buf, content[0], &mut self.state);
-            transaction_detail::draw_detail_pane(buf, content[1], &self.state);
+            transaction_list::draw_transaction_list(buf, list, &mut self.state);
+            transaction_detail::draw_detail_pane(buf, detail, &self.state);
         } else {
-            transaction_list::draw_transaction_list(buf, chunks[1], &mut self.state);
+            transaction_list::draw_transaction_list(buf, main, &mut self.state);
         }
 
-        status_bar::draw_status_bar(buf, chunks[2], &self.state);
+        status_bar::draw_status_bar(buf, status, &self.state);
 
         if let AppMode::Detail = self.state.mode {
             transaction_detail::draw_detail_popup(buf, area, &self.state);

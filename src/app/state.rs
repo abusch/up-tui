@@ -168,7 +168,9 @@ fn local_date(txn: &Transaction, tz: &TimeZone) -> Date {
 }
 
 pub struct AppState {
-    /// One tab per account, in the order the API returns them.
+    /// One tab per account (shown in the sidebar), grouped by account type as
+    /// `Account::type_order` sorts them, and otherwise in the order the API returns
+    /// them. The sidebar and next/previous account follow this order.
     pub tabs: Vec<TabState>,
     pub active_tab: usize,
     pub mode: AppMode,
@@ -185,6 +187,8 @@ pub struct AppState {
     pub tz: TimeZone,
     /// Whether the detail pane is visible.
     pub show_detail: bool,
+    /// Whether the account sidebar is visible.
+    pub show_sidebar: bool,
     /// Number of transactions that fit in the list view; updated during rendering.
     pub page_size: usize,
 }
@@ -209,13 +213,15 @@ impl AppState {
             theme: opaline::current(),
             tz: TimeZone::system(),
             show_detail: false,
+            show_sidebar: true,
             page_size: 0,
         }
     }
 
     /// Replace the account list. Tabs for accounts that still exist are updated with
     /// the new account data (e.g. balance) but keep their loaded transactions and
-    /// selection, and the active tab stays on the same account.
+    /// selection, and the active tab stays on the same account. The tabs are grouped by
+    /// account type.
     pub fn set_accounts(&mut self, accounts: Vec<Account>) {
         let active_id = self.current_tab().map(|t| t.account.id.clone());
         let mut old_tabs: HashMap<String, TabState> = self
@@ -233,6 +239,8 @@ impl AppState {
                 None => TabState::new(account),
             })
             .collect();
+        // A stable sort, so accounts of the same type keep the API's order.
+        self.tabs.sort_by_key(|tab| tab.account.type_order());
         self.active_tab = active_id.and_then(|id| self.tab_index(&id)).unwrap_or(0);
     }
 
@@ -467,6 +475,32 @@ pub(crate) mod tests {
         let ids: Vec<_> = s.tabs.iter().map(|t| t.account.id.as_str()).collect();
         assert_eq!(ids, ["a", "b"]);
         assert_eq!(s.active_tab, 0);
+    }
+
+    #[test]
+    fn set_accounts_groups_accounts_by_type() {
+        let typed = |id, account_type: &str| Account {
+            account_type: account_type.to_string(),
+            ..account(id, 0)
+        };
+        let mut s = state();
+        s.set_accounts(vec![
+            typed("saver1", "SAVER"),
+            typed("spending", "TRANSACTIONAL"),
+            typed("loan", "HOME_LOAN"),
+            typed("saver2", "SAVER"),
+            typed("2up", "TRANSACTIONAL"),
+        ]);
+        s.active_tab = s.tab_index("saver2").unwrap();
+        let ids: Vec<_> = s.tabs.iter().map(|t| t.account.id.as_str()).collect();
+        assert_eq!(ids, ["spending", "2up", "saver1", "saver2", "loan"]);
+
+        // The active account stays selected when the order changes.
+        s.set_accounts(vec![
+            typed("saver2", "SAVER"),
+            typed("spending", "TRANSACTIONAL"),
+        ]);
+        assert_eq!(s.current_tab().unwrap().account.id, "saver2");
     }
 
     #[test]

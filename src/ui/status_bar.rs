@@ -6,12 +6,12 @@ use crate::app::state::{AppMode, AppState};
 
 /// Key hints in normal mode (and behind the theme picker, which shows its own).
 const NORMAL_HINTS: &[(&str, &str)] = &[
-    ("Tab/l", "next"),
-    ("S-Tab/h", "prev"),
-    ("j/k", "navigate"),
-    ("[/]", "prev/next day"),
+    ("h/l", "account"),
+    ("j/k", "move"),
+    ("[/]", "day"),
     ("Enter", "open"),
     ("o", "detail"),
+    ("s", "sidebar"),
     ("r", "refresh"),
     ("t", "theme"),
     ("q", "quit"),
