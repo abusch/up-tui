@@ -12,7 +12,7 @@ use ratatui_toaster::{
 use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
-use crate::app::state::{AppMode, LoadKind};
+use crate::app::state::{AppMode, LoadKind, TabState};
 use crate::{
     app::{
         event::{AppEvent, spawn_event_reader},
@@ -201,93 +201,25 @@ impl App {
                     self.info("Loading transactions...");
                 }
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                if let Some(tab) = self.state.current_tab_mut()
-                    && let Some(ref txns) = tab.transactions
-                    && !txns.is_empty()
-                    && tab.selected < txns.len() - 1
-                {
-                    tab.selected += 1;
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if let Some(tab) = self.state.current_tab_mut()
-                    && tab.selected > 0
-                {
-                    tab.selected -= 1;
-                }
-            }
+            KeyCode::Char('j') | KeyCode::Down => self.navigate(TabState::select_next),
+            KeyCode::Char('k') | KeyCode::Up => self.navigate(TabState::select_prev),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let page = self.state.list_height as usize;
-                if let Some(tab) = self.state.current_tab_mut()
-                    && let Some(ref txns) = tab.transactions
-                    && !txns.is_empty()
-                {
-                    tab.selected = (tab.selected + page).min(txns.len() - 1);
-                }
+                let page_size = self.state.list_height as usize;
+                self.navigate(|tab| tab.page_down(page_size));
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let page = self.state.list_height as usize;
-                if let Some(tab) = self.state.current_tab_mut() {
-                    tab.selected = tab.selected.saturating_sub(page);
-                }
+                let page_size = self.state.list_height as usize;
+                self.navigate(|tab| tab.page_up(page_size));
             }
-            KeyCode::Char('g') => {
-                if let Some(tab) = self.state.current_tab_mut() {
-                    tab.selected = 0;
-                }
-            }
-            KeyCode::Char('G') => {
-                if let Some(tab) = self.state.current_tab_mut()
-                    && let Some(ref txns) = tab.transactions
-                    && !txns.is_empty()
-                {
-                    tab.selected = txns.len() - 1;
-                }
-            }
+            KeyCode::Char('g') => self.navigate(TabState::select_first),
+            KeyCode::Char('G') => self.navigate(TabState::select_last),
             KeyCode::Char('[') => {
                 let tz = TimeZone::system();
-                if let Some(tab) = self.state.current_tab_mut()
-                    && let Some(ref txns) = tab.transactions
-                    && !txns.is_empty()
-                {
-                    let current_date = txns[tab.selected]
-                        .created_at
-                        .to_zoned_datetime(tz.clone())
-                        .date();
-                    // Find the first transaction of the previous day
-                    if let Some(prev) = txns[..tab.selected].iter().rposition(|t| {
-                        t.created_at.to_zoned_datetime(tz.clone()).date() != current_date
-                    }) {
-                        // prev is in the previous day; find the first transaction of that day
-                        let prev_date = txns[prev].created_at.to_zoned_datetime(tz.clone()).date();
-                        let first = txns[..=prev]
-                            .iter()
-                            .position(|t| {
-                                t.created_at.to_zoned_datetime(tz.clone()).date() == prev_date
-                            })
-                            .unwrap_or(prev);
-                        tab.selected = first;
-                    }
-                }
+                self.navigate(|tab| tab.select_prev_day(&tz));
             }
             KeyCode::Char(']') => {
                 let tz = TimeZone::system();
-                if let Some(tab) = self.state.current_tab_mut()
-                    && let Some(ref txns) = tab.transactions
-                    && !txns.is_empty()
-                {
-                    let current_date = txns[tab.selected]
-                        .created_at
-                        .to_zoned_datetime(tz.clone())
-                        .date();
-                    // Find the first transaction of the next day
-                    if let Some(pos) = txns[tab.selected + 1..].iter().position(|t| {
-                        t.created_at.to_zoned_datetime(tz.clone()).date() != current_date
-                    }) {
-                        tab.selected = tab.selected + 1 + pos;
-                    }
-                }
+                self.navigate(|tab| tab.select_next_day(&tz));
             }
             KeyCode::Enter => {}
             KeyCode::Char('o') => {
@@ -311,6 +243,13 @@ impl App {
 
         // If navigation brought the selection near the end of what's loaded, fetch more.
         self.maybe_fetch_next_page();
+    }
+
+    /// Apply a navigation action to the active tab, if there is one.
+    fn navigate(&mut self, action: impl FnOnce(&mut TabState)) {
+        if let Some(tab) = self.state.current_tab_mut() {
+            action(tab);
+        }
     }
 
     pub fn fetch_categories(&self) {

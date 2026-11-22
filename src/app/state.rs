@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use jiff::{civil::Date, tz::TimeZone};
 use opaline::ThemeSelectorState;
 use ratatui::widgets::ListState;
 
@@ -79,6 +80,77 @@ impl TabState {
         self.next_page = next_page;
     }
 
+    /// The loaded transactions, or an empty slice if none are loaded yet.
+    fn txns(&self) -> &[Transaction] {
+        self.transactions.as_deref().unwrap_or_default()
+    }
+
+    /// Index of the last loaded transaction (0 if there are none).
+    fn last_index(&self) -> usize {
+        self.txns().len().saturating_sub(1)
+    }
+
+    pub fn select_next(&mut self) {
+        self.selected = (self.selected + 1).min(self.last_index());
+    }
+
+    pub fn select_prev(&mut self) {
+        self.selected = self.selected.saturating_sub(1);
+    }
+
+    pub fn page_down(&mut self, page_size: usize) {
+        self.selected = (self.selected + page_size).min(self.last_index());
+    }
+
+    pub fn page_up(&mut self, page_size: usize) {
+        self.selected = self.selected.saturating_sub(page_size);
+    }
+
+    pub fn select_first(&mut self) {
+        self.selected = 0;
+    }
+
+    pub fn select_last(&mut self) {
+        self.selected = self.last_index();
+    }
+
+    /// Select the first (topmost) transaction of the day group above the current one.
+    /// Transactions are ordered newest first, so this is a more recent day.
+    pub fn select_prev_day(&mut self, tz: &TimeZone) {
+        let txns = self.txns();
+        let Some(current) = txns.get(self.selected) else {
+            return;
+        };
+        let current_date = local_date(current, tz);
+        let Some(prev) = txns[..self.selected]
+            .iter()
+            .rposition(|t| local_date(t, tz) != current_date)
+        else {
+            return; // already in the first day group
+        };
+        let prev_date = local_date(&txns[prev], tz);
+        self.selected = txns[..prev]
+            .iter()
+            .rposition(|t| local_date(t, tz) != prev_date)
+            .map_or(0, |i| i + 1);
+    }
+
+    /// Select the first (topmost) transaction of the day group below the current one.
+    /// Transactions are ordered newest first, so this is an older day.
+    pub fn select_next_day(&mut self, tz: &TimeZone) {
+        let txns = self.txns();
+        let Some(current) = txns.get(self.selected) else {
+            return;
+        };
+        let current_date = local_date(current, tz);
+        let next = txns[self.selected + 1..]
+            .iter()
+            .position(|t| local_date(t, tz) != current_date);
+        if let Some(offset) = next {
+            self.selected += 1 + offset;
+        }
+    }
+
     /// Whether the next page should be fetched: there is one, nothing is loading, and
     /// the selection is within `lookahead` rows of the end of the loaded list.
     pub fn wants_next_page(&self, lookahead: usize) -> bool {
@@ -87,6 +159,11 @@ impl TabState {
             _ => false,
         }
     }
+}
+
+/// The calendar date of a transaction in the given time zone.
+fn local_date(txn: &Transaction, tz: &TimeZone) -> Date {
+    txn.created_at.to_zoned_datetime(tz.clone()).date()
 }
 
 pub struct AppState {
@@ -187,18 +264,171 @@ impl AppState {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::client::models::MoneyObject;
+    use crate::client::models::{MoneyObject, TransactionStatus};
+
+    pub fn money(cents: i64) -> MoneyObject {
+        MoneyObject {
+            currency_code: "AUD".to_string(),
+            value: format!("{}.{:02}", cents / 100, (cents % 100).abs()),
+            value_in_base_units: cents,
+        }
+    }
+
+    /// A transaction with the given id, created at the given RFC 3339 timestamp.
+    pub fn txn(id: &str, created_at: &str) -> Transaction {
+        Transaction {
+            id: id.to_string(),
+            status: TransactionStatus::Settled,
+            description: format!("Transaction {id}"),
+            raw_text: None,
+            message: None,
+            amount: money(-1000),
+            foreign_amount: None,
+            hold_info: None,
+            card_purchase_method: None,
+            settled_at: None,
+            created_at: created_at.parse().unwrap(),
+            round_up: None,
+            cashback: None,
+            transaction_type: None,
+            note: None,
+            performing_customer: None,
+            category: None,
+            parent_category: None,
+            tags: Vec::new(),
+        }
+    }
+
+    /// A tab with transactions on three days (newest first), all in UTC:
+    /// indices 0-1 on Nov 20, 2-4 on Nov 19, 5 on Nov 17.
+    fn tab() -> TabState {
+        let mut tab = TabState::new(account("a", 0));
+        tab.set_transactions(
+            vec![
+                txn("t0", "2026-11-20T18:00:00Z"),
+                txn("t1", "2026-11-20T09:00:00Z"),
+                txn("t2", "2026-11-19T22:00:00Z"),
+                txn("t3", "2026-11-19T12:00:00Z"),
+                txn("t4", "2026-11-19T01:00:00Z"),
+                txn("t5", "2026-11-17T15:00:00Z"),
+            ],
+            None,
+        );
+        tab
+    }
+
+    fn selected_after(start: usize, action: impl FnOnce(&mut TabState)) -> usize {
+        let mut tab = tab();
+        tab.selected = start;
+        action(&mut tab);
+        tab.selected
+    }
+
+    #[test]
+    fn next_and_prev_stop_at_the_ends() {
+        assert_eq!(selected_after(0, TabState::select_next), 1);
+        assert_eq!(selected_after(5, TabState::select_next), 5);
+        assert_eq!(selected_after(1, TabState::select_prev), 0);
+        assert_eq!(selected_after(0, TabState::select_prev), 0);
+    }
+
+    #[test]
+    fn paging_clamps_to_the_list() {
+        assert_eq!(selected_after(1, |t| t.page_down(3)), 4);
+        assert_eq!(selected_after(4, |t| t.page_down(3)), 5);
+        assert_eq!(selected_after(4, |t| t.page_up(3)), 1);
+        assert_eq!(selected_after(1, |t| t.page_up(3)), 0);
+    }
+
+    #[test]
+    fn first_and_last() {
+        assert_eq!(selected_after(3, TabState::select_first), 0);
+        assert_eq!(selected_after(3, TabState::select_last), 5);
+    }
+
+    #[test]
+    fn navigation_on_an_empty_or_unloaded_tab_stays_at_zero() {
+        let mut tab = TabState::new(account("a", 0));
+        tab.select_next();
+        tab.select_last();
+        tab.page_down(10);
+        tab.select_next_day(&TimeZone::UTC);
+        tab.select_prev_day(&TimeZone::UTC);
+        assert_eq!(tab.selected, 0);
+    }
+
+    #[test]
+    fn next_day_jumps_to_the_top_of_the_day_below() {
+        let utc = TimeZone::UTC;
+        assert_eq!(selected_after(0, |t| t.select_next_day(&utc)), 2);
+        assert_eq!(selected_after(3, |t| t.select_next_day(&utc)), 5);
+        assert_eq!(selected_after(5, |t| t.select_next_day(&utc)), 5);
+    }
+
+    #[test]
+    fn prev_day_jumps_to_the_top_of_the_day_above() {
+        let utc = TimeZone::UTC;
+        assert_eq!(selected_after(5, |t| t.select_prev_day(&utc)), 2);
+        assert_eq!(selected_after(3, |t| t.select_prev_day(&utc)), 0);
+        assert_eq!(selected_after(1, |t| t.select_prev_day(&utc)), 1);
+    }
+
+    #[test]
+    fn day_boundaries_use_the_given_time_zone() {
+        // In UTC+10, t1 (Nov 20 09:00Z) and t2 (Nov 19 22:00Z) are both on Nov 20
+        // local time, so the next day starts at t3 rather than t2.
+        let tz = TimeZone::fixed(jiff::tz::offset(10));
+        assert_eq!(selected_after(1, |t| t.select_next_day(&TimeZone::UTC)), 2);
+        assert_eq!(selected_after(1, |t| t.select_next_day(&tz)), 3);
+    }
+
+    #[test]
+    fn set_transactions_keeps_the_selected_transaction() {
+        let mut tab = tab();
+        tab.selected = 2; // t2
+        tab.set_transactions(
+            vec![
+                txn("new", "2026-11-21T08:00:00Z"),
+                txn("t0", "2026-11-20T18:00:00Z"),
+                txn("t1", "2026-11-20T09:00:00Z"),
+                txn("t2", "2026-11-19T22:00:00Z"),
+            ],
+            None,
+        );
+        assert_eq!(tab.selected, 3);
+    }
+
+    #[test]
+    fn set_transactions_clamps_when_the_selection_is_gone() {
+        let mut tab = tab();
+        tab.selected = 5; // t5
+        tab.set_transactions(vec![txn("t0", "2026-11-20T18:00:00Z")], None);
+        assert_eq!(tab.selected, 0);
+        tab.set_transactions(Vec::new(), None);
+        assert_eq!(tab.selected, 0);
+    }
+
+    #[test]
+    fn wants_next_page_near_the_end_only() {
+        let mut tab = tab();
+        tab.next_page = Some("next".to_string());
+        tab.selected = 0;
+        assert!(!tab.wants_next_page(3));
+        tab.selected = 3;
+        assert!(tab.wants_next_page(3));
+        tab.loading = Some(LoadKind::Append);
+        assert!(!tab.wants_next_page(3), "not while loading");
+        tab.loading = None;
+        tab.next_page = None;
+        assert!(!tab.wants_next_page(3), "not without a next page");
+    }
 
     pub fn account(id: &str, cents: i64) -> Account {
         Account {
             id: id.to_string(),
             display_name: format!("Account {id}"),
             account_type: "TRANSACTIONAL".to_string(),
-            balance: MoneyObject {
-                currency_code: "AUD".to_string(),
-                value: format!("{}.{:02}", cents / 100, cents % 100),
-                value_in_base_units: cents,
-            },
+            balance: money(cents),
         }
     }
 

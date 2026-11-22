@@ -139,7 +139,7 @@ src/
 | `Enter`             | Theme picker | Apply the selected theme                    |
 | `Esc`               | Theme picker | Close without changing the theme            |
 
-Key handling lives in `App::handle_normal_key` and `App::handle_key` (which delegates to `ThemeSelectorState::handle_key` in theme mode). After every Normal-mode key, `maybe_fetch_next_page()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` should be kept in sync with the bindings.
+Key handling lives in `App::handle_normal_key` and `App::handle_key` (which delegates to `ThemeSelectorState::handle_key` in theme mode). Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. After every Normal-mode key, `maybe_fetch_next_page()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` should be kept in sync with the bindings.
 
 ## Theming
 
