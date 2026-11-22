@@ -4,113 +4,158 @@ A terminal UI application for viewing Up Banking accounts and transactions.
 
 ## Overview
 
-up-tui connects to the [Up Banking API](https://developer.up.com.au/) and presents accounts as tabs with their transactions in a navigable list. Built with ratatui for rendering and tokio + reqwest for async HTTP.
+up-tui connects to the [Up Banking API](https://developer.up.com.au/) and presents accounts as tabs with their transactions in a navigable list, plus an optional detail pane. Built with ratatui for rendering, opaline for theming, and tokio + reqwest for async HTTP. The binary is named `up`.
 
 ## Configuration
 
-The app reads its API token from `~/.config/up-tui/config.toml`:
+The app reads its config from `$XDG_CONFIG_HOME/up-tui/config.toml` if `XDG_CONFIG_HOME` is set (and absolute), otherwise `~/.config/up-tui/config.toml` — on every platform, including macOS:
 
 ```toml
 api_token = "up:yeah:xxxxxxxx"
-theme = "tokyo-night"  # optional, defaults to tokyo-night
+theme = "tokyo-night"  # optional
 ```
 
-The `theme` field accepts any slug from `ThemeName::slug()` (e.g. `"dracula"`, `"catppuccin-mocha"`, `"nord"`). Config is validated before the TUI starts. Missing or invalid config prints an error to stderr and exits.
+- `dirs::config_dir()` is deliberately *not* used for the main path, because on macOS it is `~/Library/Application Support`. For backwards compatibility, if the file doesn't exist at the path above but does exist under `dirs::config_dir()/up-tui/config.toml`, that legacy file is used.
+- `theme` is an opaline builtin theme id (kebab-case, e.g. `"dracula"`, `"catppuccin-mocha"`, `"nord"`). If omitted, opaline's default theme (`silkcircuit-neon`) is used.
+- Config is validated before the TUI starts: the file must parse, `api_token` must be non-empty, and `theme` (if set) must load via `opaline::load_by_name`; otherwise the error lists the available themes. The token itself is not checked against the API until the first request.
+- Missing or invalid config is returned as an error from `main()`, which prints it to stderr and exits before entering TUI mode.
 
 ## Architecture
 
 ### Runtime Setup
 
-`main()` is synchronous. It creates a tokio `Runtime` manually, then calls `ratatui::run()` which handles terminal setup, restore, and panic recovery. The async app loop runs inside `ratatui::run()` via `rt.block_on()`. This avoids the "runtime within runtime" problem that occurs when combining `#[tokio::main]` with `ratatui::run()`.
+`main()` is `#[tokio::main(flavor = "current_thread")]`. It loads the config, builds the `App` (including the HTTP client), then calls `ratatui::init()`, runs `App::run()`, and calls `ratatui::restore()`. `ratatui::init()` also installs a panic hook that restores the terminal.
 
 ### Event Loop
 
-All input and API results flow through a single `tokio::sync::mpsc::unbounded_channel` of `AppEvent`:
+All input and API results flow through a single bounded `tokio::sync::mpsc::channel::<AppEvent>(100)`:
 
-- **Key events**: A blocking crossterm reader runs on `tokio::task::spawn_blocking` and sends `AppEvent::Key` into the channel.
-- **API results**: Async tasks send `AppEvent::AccountsLoaded`, `AppEvent::TransactionsLoaded`, or `AppEvent::CategoriesLoaded` when HTTP requests complete.
+- **Terminal events**: `spawn_event_reader` runs a crossterm `EventStream` on a tokio task. It forwards key presses (key *releases* are ignored, so keys aren't handled twice on platforms that report them) as `AppEvent::Key`, and terminal resizes as `AppEvent::Resize` (handled as a no-op; receiving any event triggers a redraw). If the input stream errors or ends, it sends `AppEvent::InputError`, and `run()` returns that error, so the app exits instead of hanging with no keyboard.
+- **API results**: spawned tasks send `AppEvent::AccountsLoaded`, `AppEvent::TransactionsLoaded`, or `AppEvent::CategoriesLoaded` when HTTP requests complete.
+- **Toast timers**: `AppEvent::ToastExpired(id)` (see Toasts below).
 
-The main loop is: draw → recv event → handle event → repeat.
+The main loop is: draw → recv event → handle event → repeat, until `state.should_quit`.
+
+Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main loop is the only consumer of the channel, so it must never `send(..).await` on it** — if the channel is full that send can never complete and the app deadlocks. Only spawned tasks send into the channel.
 
 ### State
 
-`AppState` holds all application state:
+`App` (`src/app/mod.rs`) owns the API client, the channel, the toast engine, and `AppState`.
+
+`AppState` (`src/app/state.rs`) holds:
 
 - `accounts` — list of accounts from the API
-- `tabs` — one `TabState` per account, each tracking its transaction list, selected index, and loading flag
+- `tabs` — one `TabState` per account, at the same index as in `accounts`
 - `active_tab` — currently selected tab index
-- `mode` — `Normal` (browsing) or `Detail` (viewing transaction overlay)
+- `mode` — `AppMode::Normal`, or `AppMode::Theme(ThemeSelectorState)` while the theme picker is open
+- `accounts_generation` — incremented for every accounts fetch; stale `AccountsLoaded` results are dropped
 - `categories` — cached `HashMap<String, String>` mapping category IDs to display names, fetched once on startup via `GET /categories`
-- `theme` — current `Theme` from ratatui-themes, provides the active `ThemePalette` via `state.palette()`
-- `status_message` / `status_is_error` — status bar content
+- `theme` — the current `opaline::Theme`
+- `config` — the loaded `Config`
+- `show_detail` — whether the detail pane is visible
+- `list_height` — visible page size of the transaction list, in transaction items; written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
 
-### Lazy Loading
+`TabState` holds:
 
-Transactions are fetched per-tab on first view. Switching to a tab that has no loaded transactions triggers an async fetch. The `r` key forces a re-fetch of the current tab.
+- `transactions` — `None` until the first successful load
+- `selected` — index into `transactions`. Invariant: `selected < transactions.len()` (or 0 when empty). Always replace the list via `set_transactions()`, which keeps the same transaction selected (by `id`) when it is still present and clamps otherwise.
+- `loading` — `Option<LoadKind>`: `Replace` (initial load/refresh) or `Append` (next page)
+- `generation` — incremented by `start_load()` for every fetch; results carrying an older generation were superseded and are dropped
+- `next_page` — URL of the next page of transactions, if any
+- `list_state` — ratatui `ListState`, used for scrolling
+
+`set_accounts()` keeps the `TabState` of accounts that still exist (matched by account id) and keeps the active tab on the same account.
+
+### Loading, Refresh and Pagination
+
+- On startup, accounts and categories are fetched. When accounts arrive, the active tab's transactions are fetched.
+- Transactions are fetched per tab on first view: switching to a tab with no loaded transactions (and nothing in flight) triggers a fetch. This also retries a tab whose previous load failed.
+- `r` re-fetches the account list (refreshing balances, and recovering if the initial accounts load failed) and the current tab's first page of transactions. Refreshes bypass the HTTP cache. Refreshing replaces the list with the first page only.
+- Transactions are fetched 50 per page. When navigation brings the selection within `list_height` items of the end of the loaded list and there is a `next_page`, the next page is fetched and appended.
+- `TransactionsLoaded` identifies its tab by `account_id` (not tab index) plus `generation`.
+
+### Toasts
+
+Status messages (loading, success, errors) are shown as toasts in the top-right corner via `ratatui-toaster`. The toaster's built-in auto-hide is not used (no `action_tx`; the engine is `ToastEngine<()>`), because each of its timers hides whichever toast is current. Instead `App::toast()` shows the toast directly, assigns it an id, and spawns a 3-second timer that sends `ToastExpired(id)`; only the most recent toast's timer hides it. Toast positions are computed when a toast is shown, so `update_toast_area()` (called on every render) re-shows the visible toast when the screen size changes.
+
+### Rendering
+
+`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the tab bar, the transaction list (and the detail pane on the right, taking one third of the width, when `show_detail` is set), the status bar, toasts, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `list_height`, updates each tab's `list_state`, and updates the toast area.
 
 ## Project Structure
 
 ```
 src/
-  main.rs              Entry point, runtime setup, main loop
-  config.rs            Load and validate ~/.config/up-tui/config.toml
+  main.rs              Entry point: load config, init terminal, run app, restore
+  config.rs            Locate, load and validate config.toml
 
   client/
-    mod.rs             UpClient with Bearer auth, account/transaction/category endpoints
-    error.rs           Error enum and Result type alias
-    models.rs          JSON:API envelope types, relationship types, domain structs
+    mod.rs             UpClient: Bearer auth, HTTP cache middleware, account/transaction/category endpoints
+    error.rs           Client Error enum (thiserror) and Result alias
+    models.rs          JSON:API envelope types, relationship types, domain structs, money formatting
 
   app/
-    mod.rs             Re-exports
-    state.rs           AppState, AppMode, TabState
-    event.rs           AppEvent enum, crossterm key reader
-    handler.rs         Key dispatch, state mutations, async API call spawning
+    mod.rs             App: main loop, event and key handling, fetch spawning, toasts
+    state.rs           AppState, AppMode, TabState, LoadKind
+    event.rs           AppEvent enum, crossterm event reader task
 
   ui/
-    mod.rs             Top-level draw() with layout splits
+    mod.rs             Top-level layout (Widget impl for App), theme picker overlay
     tabs.rs            Tab bar showing account names and balances
-    transaction_list.rs  Table widget with date, description, amount, status
-    transaction_detail.rs  Centered overlay with full transaction info
-    status_bar.rs      Keybinding hints and error/loading messages
+    transaction_list.rs  Transaction list grouped by day, description truncation
+    transaction_detail.rs  Detail pane with full transaction info
+    status_bar.rs      Keybinding hints
 ```
 
 ## API Layer
 
 - Base URL: `https://api.up.com.au/api/v1`
-- Auth: `Authorization: Bearer {token}` set as a default header on reqwest::Client
+- Auth: `Authorization: Bearer {token}` set as a default header on the `reqwest::Client`
+- The client is wrapped with `reqwest-middleware` and `http-cache-reqwest` (in-memory Moka cache, `CacheMode::Default`). Endpoint methods take a `reload` flag; when set, the request uses `CacheMode::Reload` (bypass the cache, update it with the response). It is used for user-initiated refreshes.
+- `get_accounts` and `get_transactions` take `PaginationOptions` (page size 50, or a `next_url` from a previous response) and return `PaginatedResponse { data, next_page_url }`
 - `Resource<A, R>` is generic over attributes (`A`) and relationships (`R`, defaults to `serde_json::Value`)
 - Transaction relationships (category, parentCategory, tags) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs
-- `GET /categories` is called once on startup to populate a category ID → display name cache in `AppState`. The detail view resolves IDs to names via `state.category_name()`, falling back to the raw ID if the cache hasn't loaded yet
-- Categories are hierarchical. The detail view displays them on a single line as "Parent / Category" (e.g. "Good Life / Restaurants & Cafes")
+- `GET /categories` is called once on startup to populate the category ID → display name cache in `AppState`. The detail pane resolves IDs to names via `state.category_name()`, falling back to the raw ID if the cache hasn't loaded yet
+- Categories are hierarchical. The detail pane displays them on a single line as "Parent / Category" (e.g. "Good Life / Restaurants & Cafes")
+- Client errors are `client::error::Error`; they are converted to `rootcause` reports when sent as `AppEvent` results
 
 ## Key Bindings
 
-| Key              | Mode   | Action                    |
-|------------------|--------|---------------------------|
-| `q` / `Ctrl+C`  | Normal | Quit                      |
-| `Tab` / `l`     | Normal | Next tab                  |
-| `Shift+Tab` / `h` | Normal | Previous tab            |
-| `j` / `↓`       | Normal | Next transaction          |
-| `k` / `↑`       | Normal | Previous transaction      |
-| `[` / `]`       | Normal | Previous / next day       |
-| `g` / `G`       | Normal | Jump to top / bottom      |
-| `Enter`          | Normal | Open detail overlay       |
-| `r`              | Normal | Refresh current tab       |
-| `t` / `T`       | Normal | Next / previous theme     |
-| `Esc` / `q`     | Detail | Close overlay             |
+| Key                 | Mode         | Action                                      |
+|---------------------|--------------|---------------------------------------------|
+| `q` / `Q` / `Ctrl+C`| Normal       | Quit                                        |
+| `Tab` / `l`         | Normal       | Next tab                                    |
+| `Shift+Tab` / `h`   | Normal       | Previous tab                                |
+| `j` / `↓`           | Normal       | Next transaction                            |
+| `k` / `↑`           | Normal       | Previous transaction                        |
+| `Ctrl+D` / `Ctrl+U` | Normal       | Page down / up                              |
+| `g` / `G`           | Normal       | Jump to top / bottom of the loaded list     |
+| `[` / `]`           | Normal       | Jump to the start of the day group above / below (the list is newest first) |
+| `o`                 | Normal       | Toggle the detail pane                      |
+| `r`                 | Normal       | Refresh accounts and the current tab        |
+| `t`                 | Normal       | Open the theme picker                       |
+| `↑` / `↓`           | Theme picker | Move selection                              |
+| typing / `Backspace`| Theme picker | Filter themes                               |
+| `Enter`             | Theme picker | Apply the selected theme                    |
+| `Esc`               | Theme picker | Close without changing the theme            |
+
+Key handling lives in `App::handle_normal_key` and `App::handle_key` (which delegates to `ThemeSelectorState::handle_key` in theme mode). After every Normal-mode key, `maybe_fetch_next_page()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` should be kept in sync with the bindings.
 
 ## Theming
 
-Powered by the `ratatui-themes` crate. The initial theme is read from the config file (`theme` field, slug format); defaults to Tokyo Night. Users can cycle through all 15 built-in themes at runtime with `t`/`T`.
+Powered by the `opaline` crate (with its `widgets` feature, for the `ThemeSelector` picker). The initial theme comes from the config `theme` field (an opaline builtin id), defaulting to opaline's default theme. `t` opens the picker to choose any builtin theme at runtime; the choice is not saved to the config file. If the selected theme fails to load, an error toast is shown and the current theme is kept.
 
-All UI modules read `state.palette()` for colors — no hardcoded colors remain. The palette colors are mapped as follows:
+All UI modules read colors from `state.theme` via semantic tokens (`opaline::names::tokens`) — no hardcoded colors. Tokens in use:
 
-- `palette.success` / `palette.error` — positive/negative amounts, status bar success/error messages
-- `palette.accent` — active tab highlight, table header, keybinding hints in status bar
-- `palette.secondary` — field labels in the detail overlay
-- `palette.muted` — inactive tabs, status column, hint text
-- `palette.selection` — selected row background
-- `palette.bg` / `palette.fg` — base background and foreground for all blocks and text
+- `BG_BASE` / `TEXT_PRIMARY` — base background and foreground
+- `BG_PANEL` — transaction list background; `BG_CODE` — detail pane background
+- `BG_SELECTION` — selected row background
+- `ACCENT_PRIMARY` — active tab, list title, selection marker
+- `TEXT_MUTED` — inactive tabs; `TEXT_DIM` — day separators, times, status bar text
+- `TEXT_SECONDARY` — field labels in the detail pane
+- `SUCCESS` — positive amounts, settled status; `CODE_NUMBER` — negative amounts in the list
+- `WARNING` — pending (held) status
+- `INFO` — keybinding hints in the status bar
 
 ## Dependencies
 
@@ -122,8 +167,12 @@ All code must pass `cargo clippy --workspace` with zero warnings before being co
 
 Run `cargo fmt --all` after making changes to ensure consistent formatting across the workspace.
 
+Run `cargo test` after making changes. Unit tests live alongside the code in `#[cfg(test)]` modules (currently the description truncation in `src/ui/transaction_list.rs`). CI runs `cargo test --workspace` and `cargo clippy --workspace -- -D warnings`.
+
 ## Error Handling
 
-- **Config errors**: Print to stderr and exit before entering TUI mode.
-- **API/network errors**: Display in the status bar (using `palette.error`). The app remains usable with stale data.
-- **Terminal/panic errors**: Handled by `ratatui::run()` which restores the terminal automatically.
+- **Config errors**: Returned from `main()` and printed to stderr before entering TUI mode.
+- **API/network errors**: Shown as error toasts. The app remains usable with stale data; `r` retries.
+- **Theme load errors**: Shown as an error toast; the current theme is kept.
+- **Terminal input errors**: `run()` returns the error, the terminal is restored, and the app exits.
+- **Panics**: The panic hook installed by `ratatui::init()` restores the terminal.

@@ -7,50 +7,62 @@ A terminal UI for [Up Banking](https://up.com.au/) that lets you browse your acc
 ## Features
 
 - View all your Up accounts as tabs with balances
-- Browse transactions with date, description, amount, and status
-- Transaction detail overlay showing full information including category hierarchy, tags, foreign amounts, round-ups, cashback, and card details
+- Browse transactions grouped by day, with description, amount, and time
+- Detail pane showing full transaction information, including status, category hierarchy, tags, foreign amounts, round-ups, cashback, and card details
 - Vim-style keyboard navigation
-- Lazy-loaded transactions per account
-- Refresh data on demand
-- 15 built-in color themes, switchable at runtime
+- Transactions loaded lazily per account, with older pages fetched automatically as you scroll
+- Refresh accounts and transactions on demand
+- Dozens of built-in color themes, with a picker to switch at runtime
+
+## Installation
+
+From [crates.io](https://crates.io/crates/up-tui) (installs a binary named `up`):
+
+```sh
+cargo install up-tui
+```
+
+Prebuilt binaries for Linux (x86_64) and macOS (Apple Silicon) are attached to each [GitHub release](https://github.com/abusch/up-tui/releases).
+
+Or build from source with `cargo run`.
 
 ## Setup
 
 1. Get a personal access token from [Up API](https://api.up.com.au/)
 
-2. Create the config file:
+2. Create the config file at `~/.config/up-tui/config.toml` (or `$XDG_CONFIG_HOME/up-tui/config.toml` if you set `XDG_CONFIG_HOME`). This location is used on macOS too:
 
    ```sh
    mkdir -p ~/.config/up-tui
    echo 'api_token = "up:yeah:your-token-here"' > ~/.config/up-tui/config.toml
    ```
 
-3. Optionally set a theme (defaults to Tokyo Night):
+   > Earlier versions read the config from `~/Library/Application Support/up-tui/config.toml` on macOS. That file is still used if `~/.config/up-tui/config.toml` doesn't exist.
+
+3. Optionally set a theme:
 
    ```toml
    theme = "dracula"
    ```
 
-   Available themes: `tokyo-night`, `dracula`, `nord`, `catppuccin-mocha`, `catppuccin-latte`, `gruvbox-dark`, `gruvbox-light`, `solarized-dark`, `solarized-light`, `monokai-pro`, `rose-pine`, `kanagawa`, `everforest`, `cyberpunk`, `one-dark-pro`
+   Themes come from [opaline](https://crates.io/crates/opaline) and include `tokyo-night`, `dracula`, `nord`, `catppuccin-mocha`, `gruvbox-dark`, `solarized-light`, `rose-pine`, `one-dark`, and many more. If the name isn't recognised, up-tui prints the full list of available themes on startup. Without a `theme` setting, opaline's default theme (`silkcircuit-neon`) is used.
 
-4. Build and run:
-
-   ```sh
-   cargo run
-   ```
+4. Run `up` (or `cargo run` from a checkout).
 
 ## Key Bindings
 
-| Key                | Action               |
-|--------------------|----------------------|
-| `Tab` / `l`        | Next account         |
-| `Shift+Tab` / `h`  | Previous account     |
-| `j` / `Down`       | Next transaction     |
-| `k` / `Up`         | Previous transaction |
-| `[` / `]`          | Previous / next day  |
-| `g` / `G`          | Jump to top / bottom |
-| `Enter`            | View transaction detail |
-| `Esc` / `q`        | Close detail / quit  |
-| `r`                | Refresh transactions |
-| `t` / `T`          | Next / previous theme |
-| `Ctrl+C`           | Quit                 |
+| Key                    | Action                                   |
+|------------------------|------------------------------------------|
+| `Tab` / `l`            | Next account                             |
+| `Shift+Tab` / `h`      | Previous account                         |
+| `j` / `Down`           | Next transaction                         |
+| `k` / `Up`             | Previous transaction                     |
+| `Ctrl+D` / `Ctrl+U`    | Page down / up                           |
+| `g` / `G`              | Jump to top / bottom                     |
+| `[` / `]`              | Jump to the day above / below            |
+| `o`                    | Toggle the transaction detail pane       |
+| `r`                    | Refresh accounts and transactions        |
+| `t`                    | Open the theme picker                    |
+| `q` / `Ctrl+C`         | Quit                                     |
+
+In the theme picker, use `Up` / `Down` to move, type to filter, `Enter` to apply the theme, and `Esc` to close without changing it. The chosen theme isn't saved; set `theme` in the config file to make it permanent.
