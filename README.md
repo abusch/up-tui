@@ -51,6 +51,10 @@ Or build from source with `cargo run`.
 
 4. Run `up` (or `cargo run` from a checkout).
 
+## Demo mode
+
+To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`). It shows made-up accounts and a few months of transactions instead of yours, and needs no API token or config file (it uses your configured theme if there is one). The data is generated relative to today, so it's the same on every run on a given day. It's also handy for screenshots that don't show your own finances.
+
 ## Key Bindings
 
 | Key                    | Action                                   |

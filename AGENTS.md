@@ -6,6 +6,10 @@ A terminal UI application for viewing Up Banking accounts and transactions.
 
 up-tui connects to the [Up Banking API](https://developer.up.com.au/) and presents accounts in a sidebar, with the selected account's transactions in a navigable list, plus an optional detail pane. Built with ratatui for rendering, opaline for theming, and tokio + reqwest for async HTTP. The binary is named `up`.
 
+## Command Line
+
+`up` takes no arguments, except `--demo` (see Demo Mode) and `-h`/`--help`. They're parsed by hand in `main()`, without a library; an unknown argument prints the usage to stderr and exits with status 2.
+
 ## Configuration
 
 The app reads its config from `$XDG_CONFIG_HOME/up-tui/config.toml` if `XDG_CONFIG_HOME` is set (and absolute), otherwise `~/.config/up-tui/config.toml` — on every platform, including macOS:
@@ -24,7 +28,7 @@ theme = "tokyo-night"  # optional
 
 ### Runtime Setup
 
-`main()` is `#[tokio::main(flavor = "current_thread")]`. It loads the config, builds the `App` (including the HTTP client), then calls `backend::init()`, runs `App::run()`, and calls `ratatui::restore()`. `backend::init()` sets up the terminal with `ratatui::init()` (raw mode, alternate screen, and a panic hook that restores the terminal), but returns an `AppTerminal`, whose crossterm backend is wrapped in `WideCharBackend`.
+`main()` is `#[tokio::main(flavor = "current_thread")]`. It parses the arguments, loads the config, builds the `App` with its data source (a `Client`), then calls `backend::init()`, runs `App::run()`, and calls `ratatui::restore()`. `backend::init()` sets up the terminal with `ratatui::init()` (raw mode, alternate screen, and a panic hook that restores the terminal), but returns an `AppTerminal`, whose crossterm backend is wrapped in `WideCharBackend`.
 
 `WideCharBackend` (`src/backend.rs`) works around a ratatui bug. When an emoji containing U+FE0F (e.g. "🛋️") is drawn over non-blank cells, ratatui's diff also emits the cell under the emoji's second column, and the crossterm backend writes it right after the emoji without moving the cursor. Terminals that draw the emoji two columns wide have already moved past that column, so it and the rest of the run of cells land one column to the right. The wrapper drops updates to cells covered by the wide character just drawn, so the backend moves the cursor before the next cell. Keep using it (and `AppTerminal`) rather than `ratatui::DefaultTerminal` until it's no longer needed: this is ratatui issue #2651, fixed by ratatui PR #2721, which isn't in a release as of ratatui-crossterm 0.1.2. Once a ratatui-crossterm release includes that fix, upgrade, delete `src/backend.rs`, and go back to `ratatui::init()` and `DefaultTerminal`.
 
@@ -112,7 +116,9 @@ src/
   config.rs            Locate, load and validate config.toml
 
   client/
-    mod.rs             UpClient: Bearer auth, HTTP cache middleware, account/transaction/category endpoints
+    mod.rs             UpClient: Bearer auth, HTTP cache middleware, account/transaction/category endpoints;
+                       Client: the app's data source, the API or the demo data
+    demo.rs            DemoBank: generated accounts and transactions for demo mode
     models.rs          JSON:API envelope types, relationship types, domain structs, money formatting
 
   app/
@@ -132,6 +138,14 @@ src/
     status_bar.rs      Keybinding hints, per mode
     toast.rs           Toast drawing in theme colours
 ```
+
+## Demo Mode
+
+`up --demo` runs the app on generated data instead of the Up API, without reading the API token (the config is read only for the theme, and ignored if it's missing or invalid). `App` gets its data from a `Client` (`src/client/mod.rs`): `Client::Up(UpClient)` or `Client::Demo(DemoBank)`, which have the same methods. Everything above the client, including the `TransactionStore` paging, works the same in both.
+
+`DemoBank` (`src/client/demo.rs`) generates the data at startup from a fixed seed (with its own small `Rng`), relative to the current local date, so it's the same on every run on a given day: five accounts (spending, 2Up, two savers with emoji names, one with U+FE0F, and a home loan) with about four months of transactions (pay, transfers between the accounts on both sides, bills, interest, and everyday purchases), and balances that add up (each account's balance is its opening balance plus its transactions). There's more than a page (`store::PAGE_SIZE`) of spending in any 30 days, so covering the recent period takes several fetches. Every request waits `LATENCY` (300 ms), so the loading states show. Pages are served from the generated list, with made-up `next_page_url`s (`demo://…?offset=N`).
+
+When adding something the UI shows, add it to the demo data too (in `Generator::day()` for regular transactions, or `Generator::one_offs()` for a single example), so it can be tried and screenshotted without real data. `client::demo::tests` checks the data (ordering, unique ids, both sides of transfers, categories, paging, at least one example of each kind of transaction) and renders the whole app on it in every view; set `UP_DEMO_SCREENS=<file>` when running that test to write the rendered screens to a file.
 
 ## API Layer
 

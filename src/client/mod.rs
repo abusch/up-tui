@@ -1,7 +1,8 @@
+pub mod demo;
 pub mod models;
 
 use http_cache_reqwest::{Cache, CacheMode, HttpCache, HttpCacheOptions, MokaManager};
-use reqwest::Client;
+
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use serde::de::DeserializeOwned;
@@ -22,7 +23,7 @@ impl UpClient {
             AUTHORIZATION,
             HeaderValue::from_str(&format!("Bearer {}", token)).context("Invalid API token")?,
         );
-        let client = Client::builder()
+        let client = reqwest::Client::builder()
             .default_headers(headers)
             .build()
             .context("Failed to create the HTTP client")?;
@@ -95,5 +96,45 @@ impl UpClient {
             data: resp.data.into_iter().map(Transaction::from).collect(),
             next_page_url: resp.links.and_then(|l| l.next),
         })
+    }
+}
+
+/// Where the app's data comes from.
+pub enum Client {
+    /// The Up API.
+    Up(UpClient),
+    /// Generated data, for demo mode (`up --demo`).
+    Demo(demo::DemoBank),
+}
+
+impl Client {
+    pub async fn get_categories(&self) -> Result<Vec<(String, String)>> {
+        match self {
+            Client::Up(client) => client.get_categories().await,
+            Client::Demo(bank) => bank.get_categories().await,
+        }
+    }
+
+    pub async fn get_accounts(
+        &self,
+        opts: PaginationOptions,
+        reload: bool,
+    ) -> Result<PaginatedResponse<Account>> {
+        match self {
+            Client::Up(client) => client.get_accounts(opts, reload).await,
+            Client::Demo(bank) => bank.get_accounts().await,
+        }
+    }
+
+    pub async fn get_transactions(
+        &self,
+        account_id: &str,
+        opts: PaginationOptions,
+        reload: bool,
+    ) -> Result<PaginatedResponse<Transaction>> {
+        match self {
+            Client::Up(client) => client.get_transactions(account_id, opts, reload).await,
+            Client::Demo(bank) => bank.get_transactions(account_id, opts).await,
+        }
     }
 }

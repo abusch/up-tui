@@ -295,7 +295,7 @@ pub struct PaginatedResponse<T> {
 
 // --- Domain structs (flattened from Resource) ---
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Account {
     pub id: String,
     pub display_name: String,
@@ -331,7 +331,7 @@ impl From<Resource<AccountAttributes>> for Account {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Transaction {
     pub id: String,
     pub status: TransactionStatus,

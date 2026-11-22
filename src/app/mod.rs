@@ -19,8 +19,7 @@ use crate::{
         event::{AppEvent, spawn_event_reader},
         state::AppState,
     },
-    client::{UpClient, models::PaginationOptions},
-    config::Config,
+    client::{Client, models::PaginationOptions},
 };
 
 pub mod event;
@@ -29,7 +28,7 @@ pub mod state;
 pub mod store;
 
 pub struct App {
-    client: Arc<UpClient>,
+    client: Arc<Client>,
     pub state: AppState,
     tx: mpsc::Sender<AppEvent>,
     rx: mpsc::Receiver<AppEvent>,
@@ -54,19 +53,20 @@ fn toast_builder(msg: String, typ: ToastType) -> ToastBuilder {
 }
 
 impl App {
-    pub fn new(cfg: Config) -> rootcause::Result<Self> {
+    /// Create the app, getting its data from `client`. `theme` is an opaline theme id.
+    pub fn new(client: Client, theme: Option<&str>) -> Self {
         let (tx, rx) = mpsc::channel::<AppEvent>(100);
         let toast_engine = ToastEngineBuilder::new(Rect::default()).build();
-        Ok(Self {
-            client: Arc::new(UpClient::new(&cfg.api_token)?),
-            state: AppState::new(cfg.theme.as_deref()),
+        Self {
+            client: Arc::new(client),
+            state: AppState::new(theme),
             tx,
             rx,
             toaster: toast_engine,
             toast_id: 0,
             last_toast: None,
             screen_area: Rect::default(),
-        })
+        }
     }
 
     pub async fn run(mut self, mut terminal: AppTerminal) -> rootcause::Result<()> {
