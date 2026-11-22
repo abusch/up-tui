@@ -5,7 +5,10 @@ use jiff::tz::TimeZone;
 use opaline::{ThemeSelectorAction, ThemeSelectorState, load_by_name};
 use ratatui::prelude::*;
 use ratatui::{DefaultTerminal, layout::Rect};
-use ratatui_toaster::{ToastEngine, ToastEngineBuilder, ToastMessage, ToastPosition, ToastType};
+use ratatui_toaster::{
+    ToastBuilder, ToastConstraint, ToastEngine, ToastEngineBuilder, ToastPosition, ToastType,
+};
+use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
 use crate::app::state::AppMode;
@@ -52,42 +55,52 @@ impl App {
         self.fetch_accounts();
         self.fetch_categories();
 
-        self.info("Loading accounts...").await;
+        self.info("Loading accounts...");
         while !self.state.should_quit {
             terminal.draw(|f| self.render(f.area(), f.buffer_mut()))?;
 
-            if let Some(event) = self.rx.recv().await {
-                self.handle_event(event).await;
+            match self.rx.recv().await {
+                // Without keyboard input the app can't be used or even quit, so bail out.
+                Some(AppEvent::InputError(e)) => {
+                    return Err(e)
+                        .context("Failed to read terminal input")
+                        .map_err(Into::into);
+                }
+                Some(event) => self.handle_event(event),
+                None => break,
             }
         }
 
         Ok(())
     }
 
-    pub async fn handle_event(&mut self, event: AppEvent) {
+    pub fn handle_event(&mut self, event: AppEvent) {
         match event {
-            AppEvent::Key(key) => self.handle_key(key).await,
+            AppEvent::Key(key) => self.handle_key(key),
+            // Nothing to do: receiving the event triggers a redraw at the new size.
+            AppEvent::Resize => {}
+            // Handled in `run`, which exits the loop.
+            AppEvent::InputError(_) => {}
             AppEvent::AccountsLoaded(result) => match result {
                 Ok(accounts) => {
                     self.state.set_accounts(accounts);
-                    self.success("Accounts loaded").await;
+                    self.success("Accounts loaded");
                     // Auto-fetch transactions for the first tab
                     if !self.state.accounts.is_empty() {
                         self.fetch_transactions(0);
                     }
                 }
                 Err(e) => {
-                    self.error(format!("Failed to load accounts: {}", e)).await;
+                    self.error(format!("Failed to load accounts: {}", e));
                 }
             },
             AppEvent::CategoriesLoaded(result) => match result {
                 Ok(categories) => {
-                    self.success("Categories loaded").await;
+                    self.success("Categories loaded");
                     self.state.categories = categories.into_iter().collect();
                 }
                 Err(e) => {
-                    self.error(format!("Failed to load categories: {}", e))
-                        .await;
+                    self.error(format!("Failed to load categories: {}", e));
                 }
             },
             AppEvent::TransactionsLoaded { tab_index, result } => {
@@ -95,12 +108,11 @@ impl App {
                     tab.loading = false;
                     match result {
                         Ok(transactions) => {
-                            tab.transactions = Some(transactions);
-                            self.success("Transactions loaded").await;
+                            tab.set_transactions(transactions);
+                            self.success("Transactions loaded");
                         }
                         Err(e) => {
-                            self.error(format!("Failed to load transactions: {}", e))
-                                .await;
+                            self.error(format!("Failed to load transactions: {}", e));
                         }
                     }
                 }
@@ -110,9 +122,9 @@ impl App {
         }
     }
 
-    async fn handle_key(&mut self, key: KeyEvent) {
+    fn handle_key(&mut self, key: KeyEvent) {
         match self.state.mode {
-            AppMode::Normal => self.handle_normal_key(key).await,
+            AppMode::Normal => self.handle_normal_key(key),
             AppMode::Theme(ref mut state) => match state.handle_key(key) {
                 ThemeSelectorAction::Cancel => self.state.mode = AppMode::Normal,
                 ThemeSelectorAction::Select(new_theme) => {
@@ -126,7 +138,7 @@ impl App {
         }
     }
 
-    async fn handle_normal_key(&mut self, key: KeyEvent) {
+    fn handle_normal_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') => {
                 self.state.should_quit = true;
@@ -136,11 +148,11 @@ impl App {
             }
             KeyCode::Tab | KeyCode::Char('l') => {
                 self.state.next_tab();
-                self.maybe_fetch_transactions().await;
+                self.maybe_fetch_transactions();
             }
             KeyCode::BackTab | KeyCode::Char('h') => {
                 self.state.prev_tab();
-                self.maybe_fetch_transactions().await;
+                self.maybe_fetch_transactions();
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 if let Some(tab) = self.state.current_tab_mut()
@@ -267,13 +279,13 @@ impl App {
         });
     }
 
-    async fn maybe_fetch_transactions(&mut self) {
+    fn maybe_fetch_transactions(&mut self) {
         let idx = self.state.active_tab;
         if let Some(tab) = self.state.tabs.get(idx)
             && tab.transactions.is_none()
             && !tab.loading
         {
-            self.info("Loading transactions...").await;
+            self.info("Loading transactions...");
             self.fetch_transactions(idx);
         }
     }
@@ -299,29 +311,28 @@ impl App {
         }
     }
 
-    async fn toast(&mut self, msg: impl Into<String>, typ: ToastType) {
-        let _ = self
-            .tx
-            .send(
-                ToastMessage::Show {
-                    message: msg.into(),
-                    toast_type: typ,
-                    position: ToastPosition::TopRight,
-                }
-                .into(),
-            )
-            .await;
+    /// Show a toast directly. This must not go through `self.tx`: the main loop is the
+    /// only consumer of that channel, so awaiting a send on it here can deadlock when
+    /// the channel is full.
+    fn toast(&mut self, msg: impl Into<String>, typ: ToastType) {
+        let msg: String = msg.into();
+        self.toaster.show_toast(
+            ToastBuilder::new(msg.into())
+                .toast_type(typ)
+                .position(ToastPosition::TopRight)
+                .constraint(ToastConstraint::Auto),
+        );
     }
 
-    async fn success(&mut self, msg: impl Into<String>) {
-        self.toast(msg, ToastType::Success).await
+    fn success(&mut self, msg: impl Into<String>) {
+        self.toast(msg, ToastType::Success)
     }
 
-    async fn error(&mut self, msg: impl Into<String>) {
-        self.toast(msg, ToastType::Error).await
+    fn error(&mut self, msg: impl Into<String>) {
+        self.toast(msg, ToastType::Error)
     }
 
-    async fn info(&mut self, msg: impl Into<String>) {
-        self.toast(msg, ToastType::Info).await
+    fn info(&mut self, msg: impl Into<String>) {
+        self.toast(msg, ToastType::Info)
     }
 }

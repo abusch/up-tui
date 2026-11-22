@@ -28,6 +28,22 @@ impl TabState {
             list_state: ListState::default(),
         }
     }
+
+    /// Replace the transaction list, keeping the same transaction selected if it is
+    /// still present, and otherwise clamping the selection to the new list's bounds.
+    /// This maintains the invariant `selected < transactions.len()` (or 0 if empty)
+    /// that the navigation handlers rely on.
+    pub fn set_transactions(&mut self, transactions: Vec<Transaction>) {
+        let selected_id = self
+            .transactions
+            .as_ref()
+            .and_then(|txns| txns.get(self.selected))
+            .map(|t| t.id.as_str());
+        self.selected = selected_id
+            .and_then(|id| transactions.iter().position(|t| t.id == id))
+            .unwrap_or_else(|| self.selected.min(transactions.len().saturating_sub(1)));
+        self.transactions = Some(transactions);
+    }
 }
 
 pub struct AppState {
