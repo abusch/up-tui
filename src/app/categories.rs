@@ -49,6 +49,11 @@ impl Categories {
         id
     }
 
+    /// The ids of Up's root categories that have their own colour, in a fixed order.
+    pub fn coloured_roots() -> impl Iterator<Item = &'static str> {
+        ROOT_COLORS.iter().map(|&(id, _)| id)
+    }
+
     /// The colour token for the root category that `id` is in, or `None` if it isn't
     /// one of Up's root categories (or isn't known yet).
     pub fn color_token(&self, id: &str) -> Option<&'static str> {

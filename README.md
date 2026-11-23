@@ -7,7 +7,7 @@ A terminal UI for [Up Banking](https://up.com.au/) that lets you browse your acc
 ## Features
 
 - View all your Up accounts in a sidebar, grouped by type, with their balances and the total
-- Account header with the selected account's balance, type, and money in and out this month (or over the last 30 days)
+- Account header with the selected account's balance, type, and money in and out this month (or over the last 30 days), with a bar showing the spending by category
 - Insights view: the balance and spending by category this month (or over the last 30 days), with a breakdown of each category by subcategory
 - Browse transactions grouped by day, with description, amount, and time
 - Detail pane showing full transaction information, including status, category hierarchy, tags, foreign amounts, round-ups, cashback, and card details
