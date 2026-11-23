@@ -3,16 +3,12 @@ use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use opaline::{ThemeSelectorAction, ThemeSelectorState};
-use ratatui::layout::Rect;
-use ratatui::prelude::*;
-use ratatui_toaster::{
-    ToastBuilder, ToastConstraint, ToastEngine, ToastEngineBuilder, ToastPosition, ToastType,
-};
+use ratatui::widgets::Widget;
 use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
 use crate::app::categories::Categories;
-use crate::app::state::{AppMode, TabState, View, recent_since};
+use crate::app::state::{AppMode, Message, MessageKind, TabState, View, recent_since};
 use crate::app::store::{Fetch, LoadKind, PageOutcome};
 use crate::backend::AppTerminal;
 use crate::{
@@ -34,40 +30,25 @@ pub struct App {
     pub state: AppState,
     tx: mpsc::Sender<AppEvent>,
     rx: mpsc::Receiver<AppEvent>,
-    // The toaster's built-in auto-hide is not used (no `action_tx`): each of its timers
-    // hides whichever toast is current, cutting later toasts short. See `toast()`.
-    toaster: ToastEngine<()>,
-    /// Id of the most recently shown toast; only its timer may hide it.
-    toast_id: u64,
-    /// The most recently shown toast, so it can be re-laid-out when the screen resizes.
-    last_toast: Option<(String, ToastType)>,
-    /// Screen area of the last render, used to position toasts.
-    screen_area: Rect,
+    /// Id of the most recently shown message; only its timer may clear it.
+    message_id: u64,
 }
 
-const TOAST_DURATION: Duration = Duration::from_secs(3);
-
-fn toast_builder(msg: String, typ: ToastType) -> ToastBuilder {
-    ToastBuilder::new(msg.into())
-        .toast_type(typ)
-        .position(ToastPosition::TopRight)
-        .constraint(ToastConstraint::Auto)
-}
+/// How long a message stays in the header bar.
+const MESSAGE_DURATION: Duration = Duration::from_secs(3);
+/// How long an error stays in the header bar: longer, so it can be read.
+const ERROR_DURATION: Duration = Duration::from_secs(8);
 
 impl App {
     /// Create the app, getting its data from `client`. `theme` is an opaline theme id.
     pub fn new(client: Client, theme: Option<&str>) -> Self {
         let (tx, rx) = mpsc::channel::<AppEvent>(100);
-        let toast_engine = ToastEngineBuilder::new(Rect::default()).build();
         Self {
             client: Arc::new(client),
             state: AppState::new(theme),
             tx,
             rx,
-            toaster: toast_engine,
-            toast_id: 0,
-            last_toast: None,
-            screen_area: Rect::default(),
+            message_id: 0,
         }
     }
 
@@ -165,10 +146,9 @@ impl App {
                 // Carry on until the recent period is loaded (or a refresh is complete).
                 self.load_tab(idx);
             }
-            AppEvent::ToastExpired(id) => {
-                if id == self.toast_id {
-                    self.toaster.hide_toast();
-                    self.last_toast = None;
+            AppEvent::MessageExpired(id) => {
+                if id == self.message_id {
+                    self.state.message = None;
                 }
             }
         }
@@ -399,62 +379,38 @@ impl App {
         });
     }
 
-    /// Show a toast directly. This must not go through `self.tx`: the main loop is the
-    /// only consumer of that channel, so awaiting a send on it here can deadlock when
-    /// the channel is full.
-    fn toast(&mut self, msg: impl Into<String>, typ: ToastType) {
-        let msg: String = msg.into();
-        self.toaster.show_toast(toast_builder(msg.clone(), typ));
-        self.last_toast = Some((msg, typ));
+    /// Show a message in the header bar, replacing any other, and clear it after a
+    /// while. This must not go through `self.tx`: the main loop is the only consumer of
+    /// that channel, so awaiting a send on it here can deadlock when the channel is full.
+    fn show_message(&mut self, text: impl Into<String>, kind: MessageKind) {
+        self.state.message = Some(Message {
+            text: text.into(),
+            kind,
+        });
 
-        // Hide it after a while, unless another toast has replaced it by then.
-        self.toast_id += 1;
-        let id = self.toast_id;
+        // Clear it after a while, unless another message has replaced it by then.
+        self.message_id += 1;
+        let id = self.message_id;
+        let duration = match kind {
+            MessageKind::Error => ERROR_DURATION,
+            MessageKind::Info | MessageKind::Success => MESSAGE_DURATION,
+        };
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(TOAST_DURATION).await;
-            let _ = tx.send(AppEvent::ToastExpired(id)).await;
+            tokio::time::sleep(duration).await;
+            let _ = tx.send(AppEvent::MessageExpired(id)).await;
         });
     }
 
-    /// Render the current toast, if any, over the whole screen `area`.
-    ///
-    /// A toast's position is computed when it's shown, so if the screen size changed
-    /// since the last render the visible toast is re-shown to lay it out for the new
-    /// size. This also places toasts that were shown before the first render.
-    pub fn render_toasts(&mut self, area: Rect, buf: &mut Buffer) {
-        if area != self.screen_area {
-            self.screen_area = area;
-            self.toaster.set_area(area);
-            if self.toaster.has_toast()
-                && let Some((msg, typ)) = &self.last_toast
-            {
-                self.toaster.show_toast(toast_builder(msg.clone(), *typ));
-            }
-        }
-        // The toaster is only used for layout: its own rendering has hardcoded colours.
-        if self.toaster.has_toast()
-            && let Some((msg, typ)) = &self.last_toast
-        {
-            crate::ui::toast::draw_toast(
-                buf,
-                self.toaster.toast_area(),
-                msg,
-                *typ,
-                &self.state.theme,
-            );
-        }
-    }
-
     fn success(&mut self, msg: impl Into<String>) {
-        self.toast(msg, ToastType::Success)
+        self.show_message(msg, MessageKind::Success)
     }
 
     fn error(&mut self, msg: impl Into<String>) {
-        self.toast(msg, ToastType::Error)
+        self.show_message(msg, MessageKind::Error)
     }
 
     fn info(&mut self, msg: impl Into<String>) {
-        self.toast(msg, ToastType::Info)
+        self.show_message(msg, MessageKind::Info)
     }
 }

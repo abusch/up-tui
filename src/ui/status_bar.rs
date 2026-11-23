@@ -1,6 +1,6 @@
 use opaline::names::tokens;
 use ratatui::prelude::*;
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Padding, Paragraph};
 
 use crate::app::state::{AppMode, AppState, View};
 
@@ -58,5 +58,10 @@ pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
         })
         .collect();
 
-    Paragraph::new(Line::from(spans)).render(area, buf);
+    // The same background as the header bar, so the two frame the screen.
+    let bg = state.theme.color(tokens::BG_HIGHLIGHT);
+    Paragraph::new(Line::from(spans))
+        .block(Block::new().padding(Padding::horizontal(1)))
+        .style(Style::default().bg(bg.into()))
+        .render(area, buf);
 }

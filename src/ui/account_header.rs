@@ -76,7 +76,7 @@ fn header_lines(tab: &TabState, state: &AppState, width: usize) -> Vec<Line<'sta
             Span::styled(money_out.format_unsigned(), fg(tokens::TEXT_PRIMARY)),
         ],
         (None, true) => vec![period, Span::styled("loading…", dim)],
-        // Failed to load (an error toast was shown), or not requested yet.
+        // Failed to load (an error message was shown), or not requested yet.
         (None, false) => Vec::new(),
     };
 

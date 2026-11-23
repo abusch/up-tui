@@ -40,7 +40,7 @@ All input and API results flow through a single bounded `tokio::sync::mpsc::chan
 
 - **Terminal events**: `spawn_event_reader` runs a crossterm `EventStream` on a tokio task. It forwards key presses (key *releases* are ignored, so keys aren't handled twice on platforms that report them) as `AppEvent::Key`, and terminal resizes as `AppEvent::Resize` (handled as a no-op; receiving any event triggers a redraw). If the input stream errors or ends, it sends `AppEvent::InputError`, and `run()` returns that error, so the app exits instead of hanging with no keyboard.
 - **API results**: spawned tasks send `AppEvent::AccountsLoaded`, `AppEvent::TransactionsLoaded`, or `AppEvent::CategoriesLoaded` when HTTP requests complete.
-- **Toast timers**: `AppEvent::ToastExpired(id)` (see Toasts below).
+- **Message timers**: `AppEvent::MessageExpired(id)` (see Status Messages below).
 
 The main loop is: draw → recv event → handle event → repeat, until `state.should_quit`.
 
@@ -48,7 +48,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 
 ### State
 
-`App` (`src/app/mod.rs`) owns the API client, the channel, the toast engine, and `AppState`.
+`App` (`src/app/mod.rs`) owns the API client, the channel, the current message's id, and `AppState`.
 
 `AppState` (`src/app/state.rs`) holds:
 
@@ -62,6 +62,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `show_detail` — whether the detail pane is visible
 - `show_sidebar` — whether the account sidebar is visible (it is by default)
 - `view` — `View::Transactions` (the transaction list and detail pane) or `View::Insights`; toggled with `i`, and kept when switching accounts
+- `message` — the status message shown in the header bar (`Message`: its text and `MessageKind`, `Info`, `Success` or `Error`), if any
 - `page_size` — how many transactions fit in the list view (computed from the list block's inner area, 2 rows per item); written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
 
 `TabState` holds:
@@ -80,20 +81,20 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 ### Loading, Refresh and Pagination
 
 - On startup, accounts and categories are fetched. When accounts arrive, the active tab's transactions are fetched.
-- `App::load_tab()` asks the tab's store for the next fetch (`TransactionStore::next_fetch()`, given the start of the recent period, `recent_since()`, and whether the list wants more) and starts it. The store asks for, in order: the rest of a refresh in progress; the first page if nothing has loaded; the next page if the recent period isn't all loaded, or the selection is within `page_size` items of the end of the list. `load_tab()` is called after every page loads, so loading carries on until the recent period is covered, when accounts arrive, when switching tabs (`ensure_tab_loaded()`, which also shows a toast for a first load), and after every Normal-mode or detail-popup key. It isn't called after a failure, so a failed fetch is retried by the next of those, not straight away.
+- `App::load_tab()` asks the tab's store for the next fetch (`TransactionStore::next_fetch()`, given the start of the recent period, `recent_since()`, and whether the list wants more) and starts it. The store asks for, in order: the rest of a refresh in progress; the first page if nothing has loaded; the next page if the recent period isn't all loaded, or the selection is within `page_size` items of the end of the list. `load_tab()` is called after every page loads, so loading carries on until the recent period is covered, when accounts arrive, when switching tabs (`ensure_tab_loaded()`, which also shows a message for a first load), and after every Normal-mode or detail-popup key. It isn't called after a failure, so a failed fetch is retried by the next of those, not straight away.
 - On the first load, the first page is shown as soon as it arrives, and the rest of the recent period is appended.
 - `r` re-fetches the account list (refreshing balances, and recovering if the initial accounts load failed) and refreshes the current tab (`TransactionStore::refresh()`), which supersedes any fetch in flight. A refresh fetches from the newest page until the recent period is covered, keeping the old transactions until then and replacing them all at once (dropping any older pages), so the list, totals and Insights always show the same data. If it fails, the old transactions stay. Pages fetched from the newest one bypass the HTTP cache.
 - There are no separate fetches for the recent period: following the page cursor until a transaction older than the period's start (or the last page) gets the same transactions as `filter[since]` would, and they stay in the list.
 - Transactions are fetched 100 per page (`store::PAGE_SIZE`, the API's maximum), so a month usually takes one request.
-- `TransactionsLoaded` identifies its tab by `account_id` (not tab index) plus the fetch's generation. Only pages that replace the list show a success toast; failures show an error toast.
+- `TransactionsLoaded` identifies its tab by `account_id` (not tab index) plus the fetch's generation. Only pages that replace the list show a success message; failures show an error message.
 
-### Toasts
+### Status Messages
 
-Status messages (loading, success, errors) are shown as toasts in the top-right corner via `ratatui-toaster`. The toaster's built-in auto-hide is not used (no `action_tx`; the engine is `ToastEngine<()>`), because each of its timers hides whichever toast is current. Instead `App::toast()` shows the toast directly, assigns it an id, and spawns a 3-second timer that sends `ToastExpired(id)`; only the most recent toast's timer hides it. Toast positions are computed when a toast is shown, so `App::render_toasts()` (called on every render) re-shows the visible toast when the screen size changes. The toast engine is only used to lay toasts out; `App::render_toasts()` draws them with `ui::toast::draw_toast()`, because the toaster's own rendering has hardcoded colours. The toast engine is private to `App`; use `info()`/`success()`/`error()` to show toasts.
+Status messages (loading, success, errors) are shown in the header bar, along the top of the screen, right-aligned after the app's name and version. There's one at a time: a new message replaces the current one. `App::show_message()` (through `info()`/`success()`/`error()`) sets `state.message`, assigns the message an id, and spawns a timer (`MESSAGE_DURATION`, 3 seconds, or `ERROR_DURATION`, 8 seconds, for errors) that sends `MessageExpired(id)`; only the most recent message's timer clears it.
 
 ### Rendering
 
-`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the account sidebar on the left (when `show_sidebar` is set), the transaction list (and the detail pane on the right, taking one third of the screen's width, when `show_detail` is set; the list takes whatever is left), the status bar, the detail popup when in `AppMode::Detail`, toasts, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size`, updates each tab's `list_state`, and updates the toast area.
+`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the header bar along the top, the account sidebar on the left (when `show_sidebar` is set), the transaction list (and the detail pane on the right, taking one third of the screen's width, when `show_detail` is set; the list takes whatever is left), the status bar, the detail popup when in `AppMode::Detail`, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size`, updates each tab's `list_state`.
 
 The sidebar (`src/ui/sidebar.rs`) lists the accounts under a heading per account type, each with its balance right-aligned, the selected one highlighted like the selected transaction, and the total of all balances at the bottom (when there's more than one account and `MoneyObject::sum` can add them up, i.e. they're in the same currency). Its width fits the longest row, between 20 and 40 columns and at most a third of the screen; longer names are truncated. 
 The account header (`src/ui/account_header.rs`) sits above the transaction list and the detail pane. It shows the selected account's name, type and ownership on one line, then its balance and, right-aligned, its money in and out over the last 30 days (on a line of their own if they don't fit). The totals show "loading…" until they're loaded, the stale totals while they're refreshed, and nothing if loading failed. Its height comes from `header_height()` (0 when there is no account yet). Because the header names the account, the list's title is just "Transactions" plus the loading status. `ui::right_aligned()` is the shared helper for a line with a right-aligned part that wraps onto its own line when it doesn't fit (also used for the detail pane's amount and status).
@@ -122,7 +123,7 @@ src/
     models.rs          JSON:API envelope types, relationship types, domain structs, money formatting
 
   app/
-    mod.rs             App: main loop, event and key handling, fetch spawning, toasts
+    mod.rs             App: main loop, event and key handling, fetch spawning, status messages
     state.rs           AppState, AppMode, View, TabState
     store.rs           TransactionStore: an account's transactions, paging, refresh
     categories.rs      Categories: names, parents, and the root categories' colour tokens
@@ -132,12 +133,12 @@ src/
   ui/
     mod.rs             Top-level layout (Widget impl for App), theme picker overlay
     sidebar.rs         Account sidebar: accounts grouped by type, balances, total
+    header_bar.rs      Header bar: app name and version, status messages
     account_header.rs  Selected account's name, type, balance and 30-day totals
     insights.rs        Insights view: spending by category bars, balance chart
     transaction_list.rs  Transaction list grouped by day, description truncation
     transaction_detail.rs  Detail pane and popup with full transaction info
     status_bar.rs      Keybinding hints, per mode
-    toast.rs           Toast drawing in theme colours
 ```
 
 ## Demo Mode
@@ -159,7 +160,7 @@ When adding something the UI shows, add it to the demo data too (in `Generator::
 - Transaction relationships (category, parentCategory, tags, transferAccount) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs. The detail pane resolves the transfer account's name from the loaded accounts via `state.account_name()`
 - `GET /categories` is called once on startup and returns `Category` structs (id, name, and the parent's id, from the `parent` relationship), stored as `state.categories`. The UI resolves IDs to names via `state.category_name()`, falling back to the raw ID if they haven't loaded yet
 - Categories are hierarchical. The detail pane displays them on a single line as "Parent › Category" (e.g. "Good Life › Restaurants & Cafes")
-- All errors are `rootcause` reports (`rootcause::Result`); there are no custom error types. Client methods return the underlying `reqwest`/`reqwest-middleware` errors as reports, which `AppEvent` results carry as-is. Toasts show only the report's top-level message (`report.format_current_context()`), not the full report, whose `Display` is a multi-line tree with source locations; that full form is only printed for errors that end the program (`main`, `config`, `App::new`/`App::run`)
+- All errors are `rootcause` reports (`rootcause::Result`); there are no custom error types. Client methods return the underlying `reqwest`/`reqwest-middleware` errors as reports, which `AppEvent` results carry as-is. Status messages show only the report's top-level message (`report.format_current_context()`), not the full report, whose `Display` is a multi-line tree with source locations; that full form is only printed for errors that end the program (`main`, `config`, `App::new`/`App::run`)
 
 ## Key Bindings
 
@@ -197,21 +198,21 @@ The picker (`ThemeSelector`) draws itself with opaline's *global* theme, and pre
 
 All UI modules read colors from `state.theme` via semantic tokens (`opaline::names::tokens`) — no hardcoded colors, and nothing drawn by a third-party widget with its own colours. Use `theme.color(token)`; `theme.line()`/`span()`/`style()` take opaline *style* names (`opaline::names::styles`), not tokens, and silently return an unstyled result for an unknown name. Tokens in use:
 
-- `BG_BASE` / `TEXT_PRIMARY` — base background and foreground, including the account header, transaction list and status bar
+- `BG_BASE` / `TEXT_PRIMARY` — base background and foreground, including the account header and transaction list
 - `BG_PANEL` — sidebar and detail pane background (the transaction list is on `BG_BASE`)
 - `BORDER_UNFOCUSED` — the sidebar's right border, the account header's bottom border, and the detail pane's left border, which separate them from the list (some themes use the same colour for `BG_BASE` and `BG_PANEL`)
-- `BG_ELEVATED` — toast, detail popup and theme picker backgrounds
+- `BG_ELEVATED` — detail popup and theme picker backgrounds
 - `BORDER_FOCUSED` — the detail popup's border
 - `BG_SELECTION` — selected transaction and account background
-- `ACCENT_PRIMARY` — sidebar, list, Insights, detail pane and popup titles, selection markers, the balance chart's line
-- `TEXT_MUTED` — foreign amounts and raw text in the detail pane, and the colour for no category (or an unknown one); `TEXT_DIM` — day separators, sidebar, detail pane and Insights section headings, the Insights shares, chart axes and labels, the account header's type and labels, times, status bar text
-- `TEXT_SECONDARY` — field labels in the detail pane; tag text; the sidebar's total
+- `ACCENT_PRIMARY` — the app name in the header bar; sidebar, list, Insights, detail pane and popup titles, selection markers, the balance chart's line
+- `TEXT_MUTED` — foreign amounts and raw text in the detail pane, and the colour for no category (or an unknown one); `TEXT_DIM` — the version in the header bar, day separators, sidebar, detail pane and Insights section headings, the Insights shares, chart axes and labels, the account header's type and labels, times, status bar text
+- `TEXT_SECONDARY` — field labels in the detail pane; tag text; the sidebar's total; status message text (other than errors)
 - Category colours, from `state.category_color()` (the category in the detail pane header and the Insights category bars): each of Up's root categories has a fixed token, and its children get the same colour (`ROOT_COLORS` in `src/app/categories.rs`): Good Life `WARNING`, Home `INFO`, Personal `SUCCESS`, Transport `ERROR`. They're the status tokens because those are clearly different hues in every builtin theme (a test checks that they're all different); other tokens, like the accents, repeat in some themes. Other categories (if Up adds a root category) are `TEXT_MUTED`.
-- `BG_HIGHLIGHT` — tag backgrounds in the detail pane
+- `BG_HIGHLIGHT` — the header bar's and status bar's background, tag backgrounds in the detail pane
 - Amounts: `TEXT_PRIMARY` for debits (and money out in the account header), `SUCCESS` for credits (and money in)
 - `SUCCESS` / `WARNING` — settled / pending (held) status
 - `INFO` — keybinding hints in the status bar
-- `INFO` / `SUCCESS` / `WARNING` / `ERROR` — toast borders, by toast type
+- `INFO` / `SUCCESS` / `ERROR` — the status message's marker (`●`, `✓`, `✗`), by `MessageKind`; error messages are all `ERROR`, the others `TEXT_SECONDARY`
 
 ## Dependencies
 
@@ -228,6 +229,6 @@ Run `cargo test` after making changes. Unit tests live alongside the code in `#[
 ## Error Handling
 
 - **Config errors**: Returned from `main()` and printed to stderr before entering TUI mode.
-- **API/network errors**: Shown as error toasts. The app remains usable with stale data; `r` retries.
+- **API/network errors**: Shown as error messages in the header bar. The app remains usable with stale data; `r` retries.
 - **Terminal input errors**: `run()` returns the error, the terminal is restored, and the app exits.
 - **Panics**: The panic hook installed by `ratatui::init()` (called by `backend::init()`) restores the terminal.

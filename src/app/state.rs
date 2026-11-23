@@ -22,6 +22,23 @@ pub fn recent_since(today: Date, tz: &TimeZone) -> Option<Timestamp> {
     Some(first_day.to_zoned_datetime(tz.clone()).ok()?.timestamp())
 }
 
+/// A transient status message, shown in the header bar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Message {
+    pub text: String,
+    pub kind: MessageKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageKind {
+    /// Something is happening, e.g. loading.
+    Info,
+    /// Something finished.
+    Success,
+    /// Something failed.
+    Error,
+}
+
 /// What the main area shows for the selected account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -211,6 +228,8 @@ pub struct AppState {
     pub view: View,
     /// Number of transactions that fit in the list view; updated during rendering.
     pub page_size: usize,
+    /// The message shown in the header bar, until it expires (see `App::show_message`).
+    pub message: Option<Message>,
 }
 
 impl AppState {
@@ -236,6 +255,7 @@ impl AppState {
             show_sidebar: true,
             view: View::Transactions,
             page_size: 0,
+            message: None,
         }
     }
 

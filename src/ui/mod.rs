@@ -1,8 +1,8 @@
 pub mod account_header;
+pub mod header_bar;
 pub mod insights;
 pub mod sidebar;
 pub mod status_bar;
-pub mod toast;
 pub mod transaction_detail;
 pub mod transaction_list;
 
@@ -44,8 +44,13 @@ impl Widget for &mut App {
             .style(Style::default().bg(bg).fg(fg))
             .render(area, buf);
 
-        let [main, status] =
-            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
+        let [header_bar, main, status] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ])
+        .areas(area);
+        header_bar::draw_header_bar(buf, header_bar, &self.state);
 
         // Account sidebar on the left, if shown.
         let main = if self.state.show_sidebar {
@@ -86,8 +91,6 @@ impl Widget for &mut App {
         if let AppMode::Detail = self.state.mode {
             transaction_detail::draw_detail_popup(buf, area, &self.state);
         }
-
-        self.render_toasts(area, buf);
 
         if let AppMode::Theme(ref mut state) = self.state.mode {
             let centered_area = area.centered(Constraint::Ratio(2, 3), Constraint::Ratio(3, 4));

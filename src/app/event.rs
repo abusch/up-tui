@@ -25,8 +25,8 @@ pub enum AppEvent {
         result: Result<PaginatedResponse<Transaction>>,
     },
     CategoriesLoaded(Result<Vec<Category>>),
-    /// The display timer for the toast with this id has run out.
-    ToastExpired(u64),
+    /// The display time for the header bar message with this id has run out.
+    MessageExpired(u64),
 }
 
 pub fn spawn_event_reader(tx: mpsc::Sender<AppEvent>) {
