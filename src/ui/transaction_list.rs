@@ -14,6 +14,11 @@ use crate::client::models::{MoneyObject, Transaction};
 use super::contrast::readable;
 use super::transaction_detail::format_day;
 
+/// Marks a transaction's category, in its root category's colour: a square, which
+/// lines up with the text beside it (unlike the account header's `▆`), and shows more
+/// colour than a dot without being as heavy as a full block.
+const CATEGORY_SYMBOL: &str = "■";
+
 /// The list's block, without its style.
 fn list_block() -> Block<'static> {
     Block::default().padding(Padding::uniform(1))
@@ -99,7 +104,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
             txn,
             &zdt,
             inner_width,
-            &state.theme,
+            state,
             row_bg,
         ));
     }
@@ -217,9 +222,10 @@ fn build_transaction_item<'a>(
     txn: &Transaction,
     zdt: &jiff::ZonedDateTime,
     inner_width: usize,
-    palette: &opaline::Theme,
+    state: &AppState,
     bg: &str,
 ) -> ListItem<'a> {
+    let palette = &state.theme;
     let time = zdt.strftime("%H:%M").to_string();
     let amount = txn.amount.format_display();
     let amount_width = amount.width();
@@ -241,7 +247,29 @@ fn build_transaction_item<'a>(
         Span::raw(" ".repeat(padding)),
         Span::styled(amount, amount_style),
     ]);
-    let line2 = Line::from(Span::styled(time, readable(palette, tokens::TEXT_DIM, bg)));
+    // The category (if any) after a block in its root category's colour, under the
+    // description, and the time on the right, under the amount. The blocks line up
+    // down the list, to scan by; the name in that colour (red for Transport) would be
+    // loud.
+    let dim = readable(palette, tokens::TEXT_DIM, bg);
+    let mut line2 = Vec::new();
+    if let Some(id) = txn.category.as_deref().or(txn.parent_category.as_deref()) {
+        let color = state.category_color(txn.parent_category.as_deref().or(Some(id)));
+        // Leave at least one column before the time.
+        let name_width = inner_width.saturating_sub(time.width() + 1 + 2);
+        line2.push(Span::styled(CATEGORY_SYMBOL, color));
+        line2.push(Span::raw(" "));
+        line2.push(Span::styled(
+            truncate_to_width(state.category_name(id), name_width),
+            dim,
+        ));
+    }
+    let left_width: usize = line2.iter().map(|span| span.content.width()).sum();
+    line2.push(Span::raw(
+        " ".repeat(inner_width.saturating_sub(left_width + time.width())),
+    ));
+    line2.push(Span::styled(time, dim));
+    let line2 = Line::from(line2);
 
     ListItem::new(Text::from(vec![line1, line2]))
 }
@@ -295,11 +323,11 @@ mod tests {
         let area = Rect::new(0, 0, 40, 10);
         let mut buf = Buffer::empty(area);
         draw_transaction_list(&mut buf, area, &mut state);
-        // Rows 3 and 5 are the times of the selected and the other transaction.
-        assert_eq!(buf[(3, 3)].symbol(), "1");
+        // Rows 3 and 5 end with the times of the selected and the other transaction.
+        assert_eq!(buf[(34, 3)].symbol(), "1");
         let on = |bg| readable(&state.theme, tokens::TEXT_DIM, bg);
-        assert_eq!(buf[(3, 3)].fg, on(tokens::BG_SELECTION));
-        assert_eq!(buf[(3, 5)].fg, on(tokens::BG_BASE));
+        assert_eq!(buf[(34, 3)].fg, on(tokens::BG_SELECTION));
+        assert_eq!(buf[(34, 5)].fg, on(tokens::BG_BASE));
         assert_ne!(on(tokens::BG_SELECTION), on(tokens::BG_BASE));
     }
 
@@ -353,6 +381,42 @@ mod tests {
         assert_eq!(rows[3], "");
         assert_eq!(rows[4], "  Tue 19 Nov 2019");
         assert!(rows[5].contains("Transaction t1"));
+    }
+
+    #[test]
+    fn the_second_row_shows_the_category_with_a_block_and_the_time_on_the_right() {
+        let mut state = AppState::new(None);
+        state.tz = jiff::tz::TimeZone::UTC;
+        state.categories = Categories::new([
+            named("home", "Home", None),
+            named("groceries", "Groceries", Some("home")),
+        ]);
+        let mut tab = TabState::new(account("a", 0));
+        tab.set_transactions(vec![
+            Transaction {
+                category: Some("groceries".to_string()),
+                parent_category: Some("home".to_string()),
+                ..txn("t0", "2020-11-20T18:00:00Z")
+            },
+            txn("t1", "2020-11-20T09:30:00Z"),
+        ]);
+        state.tabs.push(tab);
+
+        let area = Rect::new(0, 0, 40, 10);
+        let mut buf = Buffer::empty(area);
+        draw_transaction_list(&mut buf, area, &mut state);
+        let row = |y| -> String {
+            let row: String = (3..area.width).map(|x| buf[(x, y)].symbol()).collect();
+            row.trim_end().to_string()
+        };
+        // The time is right-aligned, under the amount.
+        assert_eq!(
+            row(3),
+            format!("{CATEGORY_SYMBOL} Groceries{}18:00", " ".repeat(20))
+        );
+        assert_eq!(buf[(3, 3)].fg, state.category_color(Some("home")));
+        // Without a category, there's only the time.
+        assert_eq!(row(5), format!("{}09:30", " ".repeat(31)));
     }
 
     #[test]
