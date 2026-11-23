@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
     // Load config before entering TUI mode
     let app = if demo {
         // The demo needs no config, but uses the configured theme if there is one.
-        let theme = config::load_config().ok().and_then(|cfg| cfg.theme);
+        let theme = config::load_theme().context("Failed to load configuration")?;
         let bank = DemoBank::new(&jiff::ZonedDateTime::now());
         App::new(Client::Demo(bank), theme.as_deref())
     } else {
