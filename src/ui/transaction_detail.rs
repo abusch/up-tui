@@ -288,17 +288,25 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
 /// shown only if it isn't the current year.
 fn format_datetime(ts: &Timestamp, tz: &TimeZone, today: Date) -> String {
     let zdt = ts.to_zoned_datetime(tz.clone());
-    let date = zdt.date();
-    let day = if date == today {
+    format!(
+        "{}, {}",
+        format_day(zdt.date(), today),
+        zdt.strftime("%H:%M")
+    )
+}
+
+/// A date relative to `today`: "Today", "Yesterday", or e.g. "Mon 18 Nov", with the
+/// year only if it isn't the current year.
+pub(super) fn format_day(date: Date, today: Date) -> String {
+    if date == today {
         "Today".to_string()
     } else if today.yesterday().is_ok_and(|yesterday| yesterday == date) {
         "Yesterday".to_string()
     } else if date.year() == today.year() {
-        zdt.strftime("%a %-d %b").to_string()
+        date.strftime("%a %-d %b").to_string()
     } else {
-        zdt.strftime("%a %-d %b %Y").to_string()
-    };
-    format!("{day}, {}", zdt.strftime("%H:%M"))
+        date.strftime("%a %-d %b %Y").to_string()
+    }
 }
 
 /// An amount followed by its foreign currency amount, if any.

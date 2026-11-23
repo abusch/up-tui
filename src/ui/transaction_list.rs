@@ -11,14 +11,16 @@ use crate::app::state::AppState;
 use crate::app::store::LoadKind;
 use crate::client::models::{MoneyObject, Transaction};
 
+use super::transaction_detail::format_day;
+
 /// The list's block, without its style.
 fn list_block() -> Block<'static> {
     Block::default().padding(Padding::uniform(1))
 }
 
 /// How many transactions fit in a list drawn in `area`, for Ctrl+D/Ctrl+U paging and
-/// for deciding when to load the next page. Each transaction item is 2 rows tall; day
-/// separator rows are ignored, so this is an upper bound.
+/// for deciding when to load the next page. Each transaction item is 2 rows tall; the
+/// day headers (and the blank rows above them) are ignored, so this is an upper bound.
 pub fn page_size(area: Rect) -> usize {
     usize::from(list_block().inner(area).height / 2)
 }
@@ -56,9 +58,17 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     // 2 for horizontal padding + 2 for highlight symbol ("▎ ")
     let inner_width = area.width.saturating_sub(4) as usize;
     let tz = state.tz.clone();
+    let today = state.today();
+    // A band across the list, so a day stands out from its transactions. In the few
+    // themes where the panel background is the base one, the blank row above still
+    // sets it apart.
+    let day_style = Style::default()
+        .fg(state.theme.color(tokens::TEXT_SECONDARY).into())
+        .bg(state.theme.color(tokens::BG_PANEL).into());
 
-    // Build list items with day separators. Track which list index corresponds
-    // to each transaction so we can map the selection to the right row.
+    // Build list items with a header for each day, on a band and set apart by a blank
+    // row above it (rather than a rule, which is noisier). Track which list index corresponds to
+    // each transaction so we can map the selection to the right row.
     let mut items: Vec<ListItem> = Vec::new();
     let mut txn_to_list_index: Vec<usize> = Vec::new();
     let mut last_date: Option<jiff::civil::Date> = None;
@@ -68,16 +78,11 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
         let date = zdt.date();
 
         if last_date != Some(date) {
+            if last_date.is_some() {
+                items.push(ListItem::new(Line::default()));
+            }
             last_date = Some(date);
-            let label = zdt.strftime("%a %-d %b ").to_string().to_uppercase();
-            let padded = format!("{:┄<width$}", label, width = inner_width);
-            items.push(ListItem::new(Line::from(Span::styled(
-                padded,
-                Style::default()
-                    .fg(state.theme.color(tokens::TEXT_DIM).into())
-                    .bg(bg)
-                    .add_modifier(Modifier::BOLD),
-            ))));
+            items.push(ListItem::new(format_day(date, today)).style(day_style));
         }
 
         txn_to_list_index.push(items.len());
@@ -270,13 +275,44 @@ mod tests {
         let mut buf = Buffer::empty(area);
         draw_transaction_list(&mut buf, area, &mut state);
 
-        // Row 1 is the top padding, row 2 the day separator, row 3 the transaction.
+        // Row 1 is the top padding, row 2 the day header, row 3 the transaction.
         let marker = &buf[(1, 3)];
         assert_eq!(marker.symbol(), "▎");
         assert_eq!(
             marker.fg,
             Color::from(state.theme.color(tokens::ACCENT_PRIMARY))
         );
+    }
+
+    #[test]
+    fn days_have_a_header_band_with_a_blank_row_above_all_but_the_first() {
+        let mut state = AppState::new(None);
+        state.tz = jiff::tz::TimeZone::UTC;
+        let mut tab = TabState::new(account("a", 0));
+        tab.set_transactions(vec![
+            txn("t0", "2020-11-20T18:00:00Z"),
+            txn("t1", "2019-11-19T09:00:00Z"),
+        ]);
+        state.tabs.push(tab);
+
+        let area = Rect::new(0, 0, 40, 10);
+        let mut buf = Buffer::empty(area);
+        draw_transaction_list(&mut buf, area, &mut state);
+        let rows: Vec<String> = (1..8)
+            .map(|y| {
+                let row: String = (1..area.width).map(|x| buf[(x, y)].symbol()).collect();
+                row.trim_end().to_string()
+            })
+            .collect();
+        assert_eq!(rows[0], "  Fri 20 Nov 2020");
+        // The band spans the list's width, including the selection marker's column.
+        let panel = Color::from(state.theme.color(tokens::BG_PANEL));
+        assert!((1..area.width - 1).all(|x| buf[(x, 1)].bg == panel));
+        assert_ne!(buf[(1, 2)].bg, panel);
+        assert!(rows[1].contains("Transaction t0"));
+        assert_eq!(rows[3], "");
+        assert_eq!(rows[4], "  Tue 19 Nov 2019");
+        assert!(rows[5].contains("Transaction t1"));
     }
 
     #[test]
