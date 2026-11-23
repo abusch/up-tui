@@ -51,15 +51,11 @@ impl UpClient {
         Ok(req.send().await?.error_for_status()?.json().await?)
     }
 
-    pub async fn get_categories(&self) -> Result<Vec<(String, String)>> {
+    pub async fn get_categories(&self) -> Result<Vec<Category>> {
         let url = format!("{BASE_URL}/categories");
-        let resp: JsonApiResponse<Vec<Resource<CategoryAttributes>>> =
+        let resp: JsonApiResponse<Vec<Resource<CategoryAttributes, CategoryRelationships>>> =
             self.get_json(&url, false).await?;
-        Ok(resp
-            .data
-            .into_iter()
-            .map(|r| (r.id, r.attributes.name))
-            .collect())
+        Ok(resp.data.into_iter().map(Category::from).collect())
     }
 
     pub async fn get_accounts(
@@ -108,7 +104,7 @@ pub enum Client {
 }
 
 impl Client {
-    pub async fn get_categories(&self) -> Result<Vec<(String, String)>> {
+    pub async fn get_categories(&self) -> Result<Vec<Category>> {
         match self {
             Client::Up(client) => client.get_categories().await,
             Client::Demo(bank) => bank.get_categories().await,

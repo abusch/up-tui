@@ -20,7 +20,7 @@ use jiff::{
 use rootcause::{Result, bail};
 
 use super::models::{
-    Account, CardPurchaseMethod, Cashback, Customer, HoldInfo, MoneyObject, Note,
+    Account, CardPurchaseMethod, Cashback, Category, Customer, HoldInfo, MoneyObject, Note,
     PaginatedResponse, PaginationOptions, RoundUp, Transaction, TransactionStatus,
 };
 
@@ -198,7 +198,7 @@ pub struct DemoBank {
     accounts: Vec<Account>,
     /// Each account's transactions, newest first, like the API returns them.
     transactions: HashMap<String, Vec<Transaction>>,
-    categories: Vec<(String, String)>,
+    categories: Vec<Category>,
 }
 
 impl DemoBank {
@@ -207,7 +207,7 @@ impl DemoBank {
         Generator::new(now).run()
     }
 
-    pub async fn get_categories(&self) -> Result<Vec<(String, String)>> {
+    pub async fn get_categories(&self) -> Result<Vec<Category>> {
         tokio::time::sleep(LATENCY).await;
         Ok(self.categories.clone())
     }
@@ -366,7 +366,11 @@ impl Generator {
             .collect();
         let categories = CATEGORIES
             .iter()
-            .map(|&(id, name, _)| (id.to_string(), name.to_string()))
+            .map(|&(id, name, parent)| Category {
+                id: id.to_string(),
+                name: name.to_string(),
+                parent: parent.map(str::to_string),
+            })
             .collect();
         DemoBank {
             accounts,
@@ -756,6 +760,7 @@ mod tests {
     use super::*;
     use crate::app::{
         App,
+        categories::Categories,
         state::{AppMode, View, recent_since},
     };
     use crate::client::Client;
@@ -820,10 +825,13 @@ mod tests {
     #[test]
     fn categories_exist_with_their_parents() {
         let bank = DemoBank::new(&now());
-        let names: HashMap<_, _> = bank.categories.iter().cloned().collect();
+        let names: HashMap<_, _> = bank.categories.iter().map(|c| (c.id.as_str(), c)).collect();
         for txn in bank.transactions.values().flatten() {
             if let Some(category) = &txn.category {
-                assert!(names.contains_key(category), "unknown category {category}");
+                assert!(
+                    names.contains_key(category.as_str()),
+                    "unknown category {category}"
+                );
                 assert_eq!(txn.parent_category.as_deref(), parent_category(category));
             }
         }
@@ -906,7 +914,7 @@ mod tests {
         let state = &mut app.state;
         state.tz = now.time_zone().clone();
         state.set_accounts(accounts);
-        state.categories = categories.into_iter().collect();
+        state.categories = Categories::new(categories);
         let since = recent_since(now.date(), &state.tz).unwrap();
         for tab in &mut state.tabs {
             while let Some(fetch) = tab.store.next_fetch(since, false) {

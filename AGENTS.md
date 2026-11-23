@@ -56,7 +56,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `active_tab` — index of the selected account's tab
 - `mode` — `AppMode::Normal`, `AppMode::Detail` while the detail popup is open, or `AppMode::Theme(ThemeSelectorState)` while the theme picker is open
 - `accounts_generation` — incremented for every accounts fetch; stale `AccountsLoaded` results are dropped
-- `categories` — cached `HashMap<String, String>` mapping category IDs to display names, fetched once on startup via `GET /categories`
+- `categories` — the `Categories` (`src/app/categories.rs`), fetched once on startup via `GET /categories`: each category's name and parent
 - `theme` — the current theme, an `Arc<opaline::Theme>` that is always opaline's global theme (`opaline::current()`); see Theming
 - `tz` — the local `jiff` time zone, looked up once at startup; used for displaying times and grouping transactions by day (don't call `TimeZone::system()` elsewhere)
 - `show_detail` — whether the detail pane is visible
@@ -101,11 +101,11 @@ The account header (`src/ui/account_header.rs`) sits above the transaction list 
 The Insights view (`src/ui/insights.rs`) replaces the transaction list and detail pane below the header when `view` is `View::Insights`. It's computed from the store's `recent()` transactions (the same 30 days as the header's totals), with the statistics in `src/app/insights.rs` as pure, unit-tested functions:
 
 - **Balance** (`daily_balances()`), at the top: the balance at the end of each day, worked backwards from the current balance through the recent transactions, drawn as a ratatui `Chart` (Braille line) with the first, middle and last dates. The vertical axis (`YAxis`) always includes zero, so the line's height is in proportion to the balance rather than exaggerating small changes, and is rounded out to multiples of a round step (1, 2 or 5 × a power of ten, at least one whole currency unit), which label it as whole amounts ("$2000"). The section has a fixed height (`BALANCE_HEIGHT`), so the chart is the same size for every account; on a short screen it shrinks to leave room for the categories, and is left out below `MIN_BALANCE_HEIGHT`.
-- **Spending by category** (`spending_by_category()`), below it: the debits, excluding transfers between the user's own accounts (`transfer_account` is set), summed per category (`None` is shown as "Uncategorised"), largest first; refunds aren't subtracted. Each category is a row with a bar (in eighths of a column, relative to the largest), the amount and its share. The list gets the space left by the balance section; if the categories don't fit, the smallest are grouped as "Other".
+- **Spending by category** (`spending_by_category()`), below it: the debits, excluding transfers between the user's own accounts (`transfer_account` is set), summed per category (`None` is shown as "Uncategorised"), largest first; refunds aren't subtracted. Each category is a row with a bar (in eighths of a column, relative to the largest) in its category's colour (see Theming), the amount and its share. The list gets the space left by the balance section; if the categories don't fit, the smallest are grouped as "Other".
 
 While `recent()` isn't loaded, the view shows "Loading…", or a message to press `r` if loading failed.
 
-The detail pane and the detail popup (both in `src/ui/transaction_detail.rs`) show the same content, built by `detail_lines()`, for `state.selected_transaction()`. The popup is centred, at most 72 columns wide, and shrinks to the height of its content; it draws nothing if no transaction is selected. The content has a header (description, amount with the status right-aligned, category, tags) followed by sections (When, Details, Note, Message, Raw text) that are left out when empty. Redundant information is hidden: the hold amount when it equals the final amount, and the raw text when it matches the description. Its lines are wrapped to the pane's width by `textwrap` (first-fit), with long field values indented to the value column, so the `Paragraph` is rendered without its own wrapping. Dates are shown as "Today, 14:32", "Yesterday, …" or "Mon 18 Nov, …" (with the year only if it isn't the current one).
+The detail pane and the detail popup (both in `src/ui/transaction_detail.rs`) show the same content, built by `detail_lines()`, for `state.selected_transaction()`. The popup is centred, at most 72 columns wide, and shrinks to the height of its content; it draws nothing if no transaction is selected. The content has a header (description, amount with the status right-aligned, category in its colour, tags) followed by sections (When, Details, Note, Message, Raw text) that are left out when empty. Redundant information is hidden: the hold amount when it equals the final amount, and the raw text when it matches the description. Its lines are wrapped to the pane's width by `textwrap` (first-fit), with long field values indented to the value column, so the `Paragraph` is rendered without its own wrapping. Dates are shown as "Today, 14:32", "Yesterday, …" or "Mon 18 Nov, …" (with the year only if it isn't the current one).
 
 ## Project Structure
 
@@ -125,6 +125,7 @@ src/
     mod.rs             App: main loop, event and key handling, fetch spawning, toasts
     state.rs           AppState, AppMode, View, TabState
     store.rs           TransactionStore: an account's transactions, paging, refresh
+    categories.rs      Categories: names, parents, and the root categories' colour tokens
     insights.rs        Statistics for the Insights view (spending by category, daily balances)
     event.rs           AppEvent enum, crossterm event reader task
 
@@ -156,7 +157,7 @@ When adding something the UI shows, add it to the demo data too (in `Generator::
 - `Resource<A, R>` is generic over attributes (`A`) and relationships (`R`, defaults to `serde_json::Value`)
 - Format money with the `MoneyObject` methods: `format_display()` for transaction amounts (`+$10.56` for credits, `$10.56` for debits, which are distinguished by colour), `format_signed()` for balances (`-$10.56`), `format_unsigned()` for totals known to be money out (`$10.56`, and `$0.00` rather than `format_display()`'s `+$0.00`), and `format_display_with_code()` for foreign currencies (`+10.56 USD` / `10.56 USD`, signed like `format_display()`). They take the sign from `value_in_base_units` and the digits from the API's `value` string; don't parse `value` as a float or assume two decimal places for foreign currencies. Add amounts up with `MoneyObject::sum()` (exact, in base units; `None` for mixed currencies), starting from `zero_like()` when there may be nothing to add; `with_base_units()` makes an amount in the same currency from base units (e.g. for chart labels), and `base_units_per_unit()` gives the number of base units in a whole unit (100 for dollars)
 - Transaction relationships (category, parentCategory, tags, transferAccount) are deserialized into typed `TransactionRelationships` and flattened into the `Transaction` domain struct as IDs. The detail pane resolves the transfer account's name from the loaded accounts via `state.account_name()`
-- `GET /categories` is called once on startup to populate the category ID → display name cache in `AppState`. The detail pane resolves IDs to names via `state.category_name()`, falling back to the raw ID if the cache hasn't loaded yet
+- `GET /categories` is called once on startup and returns `Category` structs (id, name, and the parent's id, from the `parent` relationship), stored as `state.categories`. The UI resolves IDs to names via `state.category_name()`, falling back to the raw ID if they haven't loaded yet
 - Categories are hierarchical. The detail pane displays them on a single line as "Parent › Category" (e.g. "Good Life › Restaurants & Cafes")
 - All errors are `rootcause` reports (`rootcause::Result`); there are no custom error types. Client methods return the underlying `reqwest`/`reqwest-middleware` errors as reports, which `AppEvent` results carry as-is. Toasts show only the report's top-level message (`report.format_current_context()`), not the full report, whose `Display` is a multi-line tree with source locations; that full form is only printed for errors that end the program (`main`, `config`, `App::new`/`App::run`)
 
@@ -203,9 +204,9 @@ All UI modules read colors from `state.theme` via semantic tokens (`opaline::nam
 - `BORDER_FOCUSED` — the detail popup's border
 - `BG_SELECTION` — selected transaction and account background
 - `ACCENT_PRIMARY` — sidebar, list, Insights, detail pane and popup titles, selection markers, the balance chart's line
-- `TEXT_MUTED` — foreign amounts and raw text in the detail pane; `TEXT_DIM` — day separators, sidebar, detail pane and Insights section headings, the Insights shares, chart axes and labels, the account header's type and labels, times, status bar text
+- `TEXT_MUTED` — foreign amounts and raw text in the detail pane, and the colour for no category (or an unknown one); `TEXT_DIM` — day separators, sidebar, detail pane and Insights section headings, the Insights shares, chart axes and labels, the account header's type and labels, times, status bar text
 - `TEXT_SECONDARY` — field labels in the detail pane; tag text; the sidebar's total
-- `ACCENT_SECONDARY` — the category in the detail pane header, the Insights category bars
+- Category colours, from `state.category_color()` (the category in the detail pane header and the Insights category bars): each of Up's root categories has a fixed token, and its children get the same colour (`ROOT_COLORS` in `src/app/categories.rs`): Good Life `WARNING`, Home `INFO`, Personal `SUCCESS`, Transport `ERROR`. They're the status tokens because those are clearly different hues in every builtin theme (a test checks that they're all different); other tokens, like the accents, repeat in some themes. Other categories (if Up adds a root category) are `TEXT_MUTED`.
 - `BG_HIGHLIGHT` — tag backgrounds in the detail pane
 - Amounts: `TEXT_PRIMARY` for debits (and money out in the account header), `SUCCESS` for credits (and money in)
 - `SUCCESS` / `WARNING` — settled / pending (held) status

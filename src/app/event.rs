@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use rootcause::Result;
 
-use crate::client::models::{Account, PaginatedResponse, Transaction};
+use crate::client::models::{Account, Category, PaginatedResponse, Transaction};
 
 pub enum AppEvent {
     Key(KeyEvent),
@@ -24,7 +24,7 @@ pub enum AppEvent {
         generation: u64,
         result: Result<PaginatedResponse<Transaction>>,
     },
-    CategoriesLoaded(Result<Vec<(String, String)>>),
+    CategoriesLoaded(Result<Vec<Category>>),
     /// The display timer for the toast with this id has run out.
     ToastExpired(u64),
 }

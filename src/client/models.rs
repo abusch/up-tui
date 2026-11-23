@@ -68,6 +68,33 @@ pub struct CategoryAttributes {
     pub name: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryRelationships {
+    #[serde(default)]
+    pub parent: Option<ToOneRelationship>,
+}
+
+/// A transaction category. Categories form a hierarchy: a root category (e.g. "Good
+/// Life") has no parent, and its children (e.g. "Restaurants & Cafes") have it as their
+/// parent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Category {
+    pub id: String,
+    pub name: String,
+    pub parent: Option<String>,
+}
+
+impl From<Resource<CategoryAttributes, CategoryRelationships>> for Category {
+    fn from(r: Resource<CategoryAttributes, CategoryRelationships>) -> Self {
+        Category {
+            id: r.id,
+            name: r.attributes.name,
+            parent: r.relationships.parent.and_then(|p| p.data).map(|d| d.id),
+        }
+    }
+}
+
 // --- Account types ---
 
 #[derive(Debug, Deserialize)]

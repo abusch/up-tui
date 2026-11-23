@@ -11,6 +11,7 @@ use ratatui_toaster::{
 use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
+use crate::app::categories::Categories;
 use crate::app::state::{AppMode, TabState, View, recent_since};
 use crate::app::store::{Fetch, LoadKind, PageOutcome};
 use crate::backend::AppTerminal;
@@ -22,6 +23,7 @@ use crate::{
     client::{Client, models::PaginationOptions},
 };
 
+pub mod categories;
 pub mod event;
 pub mod insights;
 pub mod state;
@@ -124,7 +126,7 @@ impl App {
             AppEvent::CategoriesLoaded(result) => match result {
                 Ok(categories) => {
                     self.success("Categories loaded");
-                    self.state.categories = categories.into_iter().collect();
+                    self.state.categories = Categories::new(categories);
                 }
                 Err(e) => {
                     self.error(format!(

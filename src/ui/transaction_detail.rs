@@ -138,7 +138,9 @@ fn detail_lines(
         (None, None) => None,
     };
     if let Some(category) = category {
-        out.wrapped(&category, fg(tokens::ACCENT_SECONDARY));
+        let color =
+            state.category_color(txn.parent_category.as_deref().or(txn.category.as_deref()));
+        out.wrapped(&category, Style::default().fg(color));
     }
     out.tags(
         &txn.tags,
@@ -369,6 +371,7 @@ fn card_method_name(method: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::categories::{Categories, tests::named};
     use crate::app::state::TabState;
     use crate::app::state::tests::{account, money, txn};
     use crate::client::models::{CardPurchaseMethod, HoldInfo, Note, RoundUp};
@@ -393,12 +396,10 @@ mod tests {
     #[test]
     fn full_transaction_layout() {
         let mut state = state();
-        state
-            .categories
-            .insert("good-life".to_string(), "Good Life".to_string());
-        state
-            .categories
-            .insert("restaurants".to_string(), "Restaurants".to_string());
+        state.categories = Categories::new([
+            named("good-life", "Good Life", None),
+            named("restaurants", "Restaurants", Some("good-life")),
+        ]);
 
         let mut t = txn("t", "2026-11-20T12:30:00Z");
         t.description = "Cafe Sydney".to_string();
@@ -450,6 +451,10 @@ mod tests {
                 "RAW TEXT ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄",
                 "CAFE SYDNEY PTY LTD",
             ]
+        );
+        assert_eq!(
+            lines[2].style.fg,
+            Some(state.theme.color(tokens::WARNING).into())
         );
     }
 

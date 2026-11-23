@@ -111,22 +111,23 @@ fn category_lines(
 
     // Heading and total lines, plus one row per category.
     let max_rows = max_lines.saturating_sub(2).max(1);
-    let mut rows: Vec<(String, i64)> = spending
+    // Each row: the name, the bar's colour (its root category's) and the amount.
+    let mut rows: Vec<(String, Color, i64)> = spending
         .iter()
         .map(|c| {
             let name = match &c.category {
                 Some(id) => state.category_name(id).to_string(),
                 None => "Uncategorised".to_string(),
             };
-            (name, c.total)
+            (name, state.category_color(c.category.as_deref()), c.total)
         })
         .collect();
     if rows.len() > max_rows {
         let other = rows
             .split_off(max_rows - 1)
             .iter()
-            .fold(0i64, |sum, (_, t)| sum.saturating_add(*t));
-        rows.push(("Other".to_string(), other));
+            .fold(0i64, |sum, (_, _, t)| sum.saturating_add(*t));
+        rows.push(("Other".to_string(), state.category_color(None), other));
     }
 
     let money = |base_units: i64| {
@@ -136,20 +137,20 @@ fn category_lines(
             .map(|m| m.format_unsigned())
             .unwrap_or_default()
     };
-    let amounts: Vec<String> = rows.iter().map(|&(_, t)| money(t)).collect();
+    let amounts: Vec<String> = rows.iter().map(|&(_, _, t)| money(t)).collect();
     let amount_width = amounts.iter().map(|a| a.width()).max().unwrap_or(0);
     let name_width = rows
         .iter()
-        .map(|(name, _)| name.width())
+        .map(|(name, _, _)| name.width())
         .max()
         .unwrap_or(0)
         .min(MAX_NAME_WIDTH)
         .min(width / 3);
     // Name, gap, bar, gap, amount, gap, percentage.
     let bar_width = width.saturating_sub(name_width + 2 + 1 + amount_width + 2 + PERCENT_WIDTH);
-    let largest = rows.iter().map(|&(_, t)| t).max().unwrap_or(1).max(1);
+    let largest = rows.iter().map(|&(_, _, t)| t).max().unwrap_or(1).max(1);
 
-    for ((name, amount), formatted) in rows.iter().zip(&amounts) {
+    for ((name, color, amount), formatted) in rows.iter().zip(&amounts) {
         let name = truncate_to_width(name, name_width);
         let name_padding = name_width.saturating_sub(name.width());
         let bar = bar(*amount, largest, bar_width);
@@ -157,7 +158,7 @@ fn category_lines(
         lines.push(Line::from(vec![
             Span::styled(name, fg(tokens::TEXT_PRIMARY)),
             Span::raw(" ".repeat(name_padding + 2)),
-            Span::styled(bar, fg(tokens::ACCENT_SECONDARY)),
+            Span::styled(bar, Style::default().fg(*color)),
             Span::raw(" ".repeat(bar_padding + 1)),
             Span::styled(
                 format!("{formatted:>amount_width$}"),
@@ -330,6 +331,7 @@ fn without_zero_fraction(text: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::categories::{Categories, tests::named};
     use crate::app::state::tests::{account, money, state, txn};
     use crate::client::models::Transaction;
 
@@ -402,12 +404,12 @@ mod tests {
     #[test]
     fn categories_are_listed_with_bars_amounts_and_shares() {
         let mut state = state();
-        state
-            .categories
-            .insert("groceries".to_string(), "Groceries".to_string());
-        state
-            .categories
-            .insert("restaurants".to_string(), "Restaurants & Cafes".to_string());
+        state.categories = Categories::new([
+            named("good-life", "Good Life", None),
+            named("home", "Home", None),
+            named("groceries", "Groceries", Some("home")),
+            named("restaurants", "Restaurants & Cafes", Some("good-life")),
+        ]);
         let tab = TabState::new(account("a", 0));
         let spending = [
             spent(Some("groceries"), 41230),
@@ -423,6 +425,18 @@ mod tests {
                 "Restaurants & Cafes  ████████████▌             $206.15   30%",
                 "Uncategorised        ████▊                      $80.00   11%",
                 "$698.45 spent, not counting transfers between your accounts",
+            ]
+        );
+
+        // The bars are in their root category's colour, and muted without a category.
+        let color = |token| Some(state.theme.color(token).into());
+        let bar_colors: Vec<_> = lines[1..4].iter().map(|l| l.spans[2].style.fg).collect();
+        assert_eq!(
+            bar_colors,
+            [
+                color(tokens::INFO),
+                color(tokens::WARNING),
+                color(tokens::TEXT_MUTED),
             ]
         );
     }

@@ -3,8 +3,11 @@ use std::sync::Arc;
 
 use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
 use opaline::ThemeSelectorState;
+use opaline::names::tokens;
+use ratatui::style::Color;
 use ratatui::widgets::ListState;
 
+use crate::app::categories::Categories;
 use crate::app::store::{PageOutcome, TransactionStore};
 use crate::client::models::{Account, MoneyObject, PaginatedResponse, Transaction};
 
@@ -192,7 +195,7 @@ pub struct AppState {
     pub should_quit: bool,
     /// Incremented for every accounts fetch; stale results are dropped.
     pub accounts_generation: u64,
-    pub categories: HashMap<String, String>,
+    pub categories: Categories,
     /// The theme everything is drawn with. Always opaline's global theme
     /// (`opaline::current()`), which the theme picker draws with and changes to
     /// preview themes, so the picker and the rest of the UI always match.
@@ -226,7 +229,7 @@ impl AppState {
             mode: AppMode::Normal,
             should_quit: false,
             accounts_generation: 0,
-            categories: HashMap::new(),
+            categories: Categories::default(),
             theme: opaline::current(),
             tz: TimeZone::system(),
             show_detail: false,
@@ -298,7 +301,17 @@ impl AppState {
     }
 
     pub fn category_name<'a>(&'a self, id: &'a str) -> &'a str {
-        self.categories.get(id).map(|s| s.as_str()).unwrap_or(id)
+        self.categories.name(id)
+    }
+
+    /// The colour for a category: its root category's colour token (see
+    /// `Categories::color_token`). Transactions without a category, or with one that
+    /// isn't known (yet), are `TEXT_MUTED`.
+    pub fn category_color(&self, id: Option<&str>) -> Color {
+        let token = id
+            .and_then(|id| self.categories.color_token(id))
+            .unwrap_or(tokens::TEXT_MUTED);
+        self.theme.color(token).into()
     }
 
     /// Display name of one of the user's accounts, falling back to the id if it isn't
