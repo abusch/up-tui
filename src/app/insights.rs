@@ -1,14 +1,13 @@
-//! Statistics for the Insights view, computed from an account's recent transactions
-//! (`TabState::recent`).
+//! Statistics for the Insights view, computed from an account's transactions over the
+//! selected period (`TransactionStore::recent`).
 
 use std::collections::HashMap;
 
 use jiff::{civil::Date, tz::TimeZone};
 
-use crate::app::state::RECENT_DAYS;
 use crate::client::models::Transaction;
 
-/// Money spent in one category over the recent period.
+/// Money spent in one category over the period.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CategorySpending {
     /// The category id, or `None` for transactions without a category.
@@ -87,14 +86,15 @@ fn spending_by<'a>(
     spending
 }
 
-/// The balance at the end of each of the last `RECENT_DAYS` days (including today),
-/// oldest first, in base units. It's worked out backwards from `balance`, the current
-/// balance, through `transactions`, which must be all the transactions since the start
-/// of the first day (as `TabState::recent` is). Days are local dates in `tz`.
+/// The balance at the end of each day from `first_day` to `today`, oldest first, in
+/// base units. It's worked out backwards from `balance`, the current balance, through
+/// `transactions`, which must be all the transactions since the start of `first_day`
+/// (as `TransactionStore::recent` is). Days are local dates in `tz`.
 pub fn daily_balances(
     balance: i64,
     transactions: &[Transaction],
     tz: &TimeZone,
+    first_day: Date,
     today: Date,
 ) -> Vec<(Date, i64)> {
     let mut net_by_day: HashMap<Date, i64> = HashMap::new();
@@ -107,7 +107,7 @@ pub fn daily_balances(
     let mut balances = Vec::new();
     let mut day = today;
     let mut end_of_day = balance;
-    for _ in 0..RECENT_DAYS {
+    while day >= first_day {
         balances.push((day, end_of_day));
         // The balance at the end of the previous day is before this day's transactions.
         end_of_day = end_of_day.saturating_sub(net_by_day.get(&day).copied().unwrap_or(0));
@@ -224,9 +224,10 @@ mod tests {
             spent("c", "2026-11-22T18:00:00Z", -2000, None),
             spent("d", "2026-11-20T09:00:00Z", -500, None),
         ];
-        let balances = daily_balances(10000, &transactions, &tz, today);
-        assert_eq!(balances.len(), RECENT_DAYS as usize);
-        assert_eq!(balances[0].0, "2026-10-25".parse::<Date>().unwrap());
+        let first_day = "2026-10-25".parse().unwrap();
+        let balances = daily_balances(10000, &transactions, &tz, first_day, today);
+        assert_eq!(balances.len(), 30);
+        assert_eq!(balances[0].0, first_day);
         let last: Vec<_> = balances[balances.len() - 5..]
             .iter()
             .map(|&(day, balance)| (day.to_string(), balance))
@@ -246,6 +247,12 @@ mod tests {
             balances[..balances.len() - 5]
                 .iter()
                 .all(|&(_, b)| b == 8500)
+        );
+
+        // On the first day of a period, there's just today.
+        assert_eq!(
+            daily_balances(10000, &transactions[..1], &tz, today, today),
+            [(today, 10000)]
         );
     }
 }

@@ -763,7 +763,7 @@ mod tests {
     use crate::app::{
         App,
         categories::Categories,
-        state::{CategoryFilter, View, recent_since},
+        state::{CategoryFilter, Period, View},
     };
     use crate::client::Client;
     use crossterm::event::{KeyCode, KeyEvent};
@@ -918,7 +918,15 @@ mod tests {
         state.tz = now.time_zone().clone();
         state.set_accounts(accounts);
         state.categories = Categories::new(categories);
-        let since = recent_since(now.date(), &state.tz).unwrap();
+        load_period(&mut app, now);
+        app
+    }
+
+    /// Load the transactions of the app's period in every account, as of `now`.
+    fn load_period(app: &mut App, now: &ZonedDateTime) {
+        let bank = DemoBank::new(now);
+        let state = &mut app.state;
+        let since = state.period.start(now.date(), &state.tz).unwrap();
         for tab in &mut state.tabs {
             while let Some(fetch) = tab.store.next_fetch(since, false) {
                 let opts = PaginationOptions {
@@ -930,7 +938,6 @@ mod tests {
             }
             assert!(tab.store.recent().is_some());
         }
-        app
     }
 
     fn render(app: &mut App, width: u16, height: u16) -> String {
@@ -1001,6 +1008,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn p_changes_the_period() {
+        let mut app = demo_app(&now());
+        assert_eq!(app.state.period, Period::ThisMonth);
+        let oldest = |app: &App| app.state.tabs[0].store.recent().unwrap().last().cloned();
+        assert!(oldest(&app).unwrap().created_at >= "2026-10-31T13:00:00Z".parse().unwrap());
+
+        // The last 30 days start before this month: the rest is loaded.
+        press(&mut app, &[KeyCode::Char('p')]);
+        assert_eq!(app.state.period, Period::Last30Days);
+        assert!(app.state.tabs[0].store.recent().is_none());
+        assert!(app.state.tabs[0].store.loading().is_some());
+
+        // Back to this month while that's loading: it's already there.
+        press(&mut app, &[KeyCode::Char('p')]);
+        assert_eq!(app.state.period, Period::ThisMonth);
+        assert!(oldest(&app).is_some());
+    }
+
+    #[tokio::test]
     async fn enter_toggles_the_detail_pane() {
         let mut app = demo_app(&now());
         assert!(!app.state.show_detail);
@@ -1018,6 +1044,15 @@ mod tests {
         let mut app = demo_app(&now());
         let mut screens = Vec::new();
         for tab in 0..app.state.tabs.len() {
+            // The Insights view over the other period.
+            app.state.active_tab = tab;
+            app.state.view = View::Insights;
+            app.state.period = Period::Last30Days;
+            load_period(&mut app, &now());
+            screens.push(render(&mut app, 120, 40));
+            app.state.period = Period::ThisMonth;
+            load_period(&mut app, &now());
+
             app.state.active_tab = tab;
             app.state.view = View::Transactions;
             app.state.show_detail = true;

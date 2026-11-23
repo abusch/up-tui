@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 
 use crate::app::categories::Categories;
 use crate::app::insights::{spending_by_root, spending_in_root};
-use crate::app::state::{AppMode, CategoryFilter, Message, MessageKind, View, recent_since};
+use crate::app::state::{AppMode, CategoryFilter, Message, MessageKind, View};
 use crate::app::store::{Fetch, LoadKind, PageOutcome};
 use crate::backend::AppTerminal;
 use crate::{
@@ -145,7 +145,7 @@ impl App {
                         return;
                     }
                 }
-                // Carry on until the recent period is loaded (or a refresh is complete).
+                // Carry on until the period is loaded (or a refresh is complete).
                 self.load_tab(idx);
             }
             AppEvent::MessageExpired(id) => {
@@ -203,6 +203,10 @@ impl App {
             KeyCode::Esc | KeyCode::Backspace if self.state.filter.is_some() => {
                 self.state.filter = None;
                 self.state.view = View::Insights;
+            }
+            // The fetch it needs (if it starts earlier) is started below.
+            KeyCode::Char('p') => {
+                self.state.period = self.state.period.next();
             }
             KeyCode::Char('a') => {
                 self.state.show_sidebar = !self.state.show_sidebar;
@@ -330,7 +334,7 @@ impl App {
     /// Start the fetch the tab needs next, if any (see `TransactionStore::next_fetch`).
     /// Returns whether one was started.
     fn load_tab(&mut self, tab_index: usize) -> bool {
-        let Some(since) = self.recent_since() else {
+        let Some(since) = self.period_start() else {
             return false;
         };
         let lookahead = self.state.page_size;
@@ -349,7 +353,7 @@ impl App {
     /// Reload the tab's transactions from the newest page, superseding any fetch in
     /// flight.
     fn refresh_tab(&mut self, tab_index: usize) {
-        let Some(since) = self.recent_since() else {
+        let Some(since) = self.period_start() else {
             return;
         };
         let Some(tab) = self.state.tabs.get_mut(tab_index) else {
@@ -360,12 +364,9 @@ impl App {
         self.spawn_fetch(account_id, fetch);
     }
 
-    /// The start of the recent period, as of now.
-    fn recent_since(&self) -> Option<jiff::Timestamp> {
-        let today = jiff::Timestamp::now()
-            .to_zoned_datetime(self.state.tz.clone())
-            .date();
-        recent_since(today, &self.state.tz)
+    /// The start of the selected period, as of now.
+    fn period_start(&self) -> Option<jiff::Timestamp> {
+        self.state.period.start(self.state.today(), &self.state.tz)
     }
 
     /// Fetch a page of an account's transactions, sending the result as

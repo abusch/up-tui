@@ -7,8 +7,8 @@ A terminal UI for [Up Banking](https://up.com.au/) that lets you browse your acc
 ## Features
 
 - View all your Up accounts in a sidebar, grouped by type, with their balances and the total
-- Account header with the selected account's balance, type, and money in and out over the last 30 days
-- Insights view: the balance and spending by category over the last 30 days, with a breakdown of each category by subcategory
+- Account header with the selected account's balance, type, and money in and out this month (or over the last 30 days)
+- Insights view: the balance and spending by category this month (or over the last 30 days), with a breakdown of each category by subcategory
 - Browse transactions grouped by day, with description, amount, and time
 - Detail pane showing full transaction information, including status, category hierarchy, tags, foreign amounts, round-ups, cashback, and card details
 - Vim-style keyboard navigation
@@ -69,11 +69,12 @@ To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`).
 | `Enter`                | Toggle the transaction detail pane       |
 | `a`                    | Toggle the account sidebar               |
 | `i`                    | Switch between transactions and Insights |
+| `p`                    | Switch between this month and 30 days    |
 | `r`                    | Refresh accounts and transactions        |
 | `t`                    | Open the theme picker                    |
 | `q` / `Ctrl+C`         | Quit                                     |
 
-In the Insights view, `j` / `k` select a category, `Enter` shows its breakdown by subcategory (where `j` / `k` select a subcategory), and `Esc` goes back to the list of categories. `Enter` on a subcategory shows its transactions over the last 30 days in the transaction list, with a bar above it saying what it's filtered by; `Esc` goes back to the breakdown.
+In the Insights view, `j` / `k` select a category, `Enter` shows its breakdown by subcategory (where `j` / `k` select a subcategory), and `Esc` goes back to the list of categories. `Enter` on a subcategory shows its transactions over the period in the transaction list, with a bar above it saying what it's filtered by; `Esc` goes back to the breakdown.
 
 If the window is too narrow for the transaction list and the detail pane side by side, the pane is shown in place of the list (the navigation keys still move through the transactions).
 

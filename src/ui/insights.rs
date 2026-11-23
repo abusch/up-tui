@@ -1,4 +1,4 @@
-use jiff::Timestamp;
+use jiff::ToSpan;
 use opaline::names::tokens;
 use ratatui::{
     prelude::*,
@@ -9,7 +9,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::transaction_list::truncate_to_width;
 use crate::app::insights::{CategorySpending, daily_balances, spending_by_root, spending_in_root};
-use crate::app::state::{AppState, RECENT_DAYS, TabState};
+use crate::app::state::{AppState, TabState};
 use crate::client::models::MoneyObject;
 
 /// Partial blocks for the fractional end of a bar, in eighths (index 1 is ⅛).
@@ -32,13 +32,13 @@ const MIN_CATEGORY_HEIGHT: u16 = 3;
 const MIN_BALANCE_HEIGHT: u16 = 6;
 
 /// The Insights view for the selected account, in place of the transaction list:
-/// the balance over the recent period at the top, then spending by root category, or
+/// the balance over the period at the top, then spending by root category, or
 /// the selected root category's breakdown by subcategory.
 pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
     let theme = &state.theme;
     let fg = |token| Style::default().fg(theme.color(token).into());
     let block = Block::default()
-        .title(format!(" Insights - last {RECENT_DAYS} days "))
+        .title(format!(" Insights - {} ", state.period.name(state.today())))
         .title_style(theme.color(tokens::ACCENT_PRIMARY))
         .padding(Padding::uniform(1))
         .style(fg(tokens::TEXT_PRIMARY).bg(theme.color(tokens::BG_BASE).into()));
@@ -52,7 +52,7 @@ pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
         let message = if tab.store.loading().is_some() {
             "Loading…".to_string()
         } else {
-            format!("Couldn't load the last {RECENT_DAYS} days' transactions. Press r to retry.")
+            "Couldn't load this period's transactions. Press r to retry.".to_string()
         };
         Paragraph::new(Line::styled(message, fg(tokens::TEXT_DIM))).render(inner, buf);
         return;
@@ -297,7 +297,8 @@ fn percent(part: i64, total: i64) -> String {
     }
 }
 
-/// The balance at the end of each day of the period, as a line chart.
+/// The balance at the end of each day of the period so far, as a line chart. Its axis
+/// spans the whole period (`Period::last_day`), so a month's line ends at today.
 fn draw_balance_chart(buf: &mut Buffer, area: Rect, tab: &TabState, state: &AppState) {
     let Some(recent) = tab.store.recent() else {
         return;
@@ -313,12 +314,25 @@ fn draw_balance_chart(buf: &mut Buffer, area: Rect, tab: &TabState, state: &AppS
         Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
     heading("Balance", usize::from(area.width), state).render(heading_area, buf);
 
-    let today = Timestamp::now().to_zoned_datetime(state.tz.clone()).date();
+    let today = state.today();
+    let (first_day, last_day) = (state.period.first_day(today), state.period.last_day(today));
     let balance = &tab.account.balance;
-    let balances = daily_balances(balance.value_in_base_units, recent, &state.tz, today);
-    let (Some(first), Some(last)) = (balances.first(), balances.last()) else {
+    let balances = daily_balances(
+        balance.value_in_base_units,
+        recent,
+        &state.tz,
+        first_day,
+        today,
+    );
+    if balances.is_empty() {
         return;
-    };
+    }
+    // The index of the axis's last day: the days are numbered from `first_day`.
+    let last_index = first_day
+        .until(last_day)
+        .map_or(0, |span| span.get_days())
+        .max(i32::try_from(balances.len()).unwrap_or(i32::MAX) - 1);
+    let middle_day = first_day.saturating_add((last_index / 2).days());
     let points: Vec<(f64, f64)> = balances
         .iter()
         .enumerate()
@@ -336,7 +350,6 @@ fn draw_balance_chart(buf: &mut Buffer, area: Rect, tab: &TabState, state: &AppS
             .unwrap_or_default();
         Span::styled(without_zero_fraction(&text).to_string(), dim)
     };
-    let middle = &balances[balances.len() / 2];
     let day = |date: jiff::civil::Date| Span::styled(date.strftime("%-d %b").to_string(), dim);
 
     let dataset = Dataset::default()
@@ -349,8 +362,8 @@ fn draw_balance_chart(buf: &mut Buffer, area: Rect, tab: &TabState, state: &AppS
         .x_axis(
             Axis::default()
                 .style(dim)
-                .bounds([0.0, (points.len().saturating_sub(1)) as f64])
-                .labels([day(first.0), day(middle.0), day(last.0)]),
+                .bounds([0.0, f64::from(last_index)])
+                .labels([day(first_day), day(middle_day), day(last_day)]),
         )
         .y_axis(
             Axis::default()

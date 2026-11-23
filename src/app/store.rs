@@ -100,16 +100,18 @@ impl TransactionStore {
 
     /// The fetch to start next, if any: the first page if none has loaded, the rest of
     /// a refresh, or the next page if the recent period since `period_start` isn't all
-    /// loaded or the list `wants_more`. Nothing while a fetch is in flight.
+    /// loaded or the list `wants_more`. Nothing while a fetch is in flight, though
+    /// `recent()` follows the new `period_start` straight away.
     ///
     /// It's called after every page loads, so that loading continues until nothing more
-    /// is needed, and when the user does something that might need more. It isn't called
-    /// after a failure, so a failed fetch is retried then rather than straight away.
+    /// is needed, and when the user does something that might need more (such as
+    /// changing the period). It isn't called after a failure, so a failed fetch is
+    /// retried then rather than straight away.
     pub fn next_fetch(&mut self, period_start: Timestamp, wants_more: bool) -> Option<Fetch> {
+        self.period_start = Some(period_start);
         if self.loading.is_some() {
             return None;
         }
-        self.period_start = Some(period_start);
         if let Some(staged) = &self.staged {
             let url = staged.next_page.clone();
             return Some(self.start(LoadKind::Replace, url));
@@ -251,6 +253,7 @@ mod tests {
         let first = store.next_fetch(since(), false);
         assert_eq!(first, fetch(LoadKind::Replace, None, 1));
         assert_eq!(store.next_fetch(since(), true), None, "one fetch at a time");
+        assert_eq!(store.next_fetch(since(), false), None);
 
         let outcome = store.page_loaded(
             1,

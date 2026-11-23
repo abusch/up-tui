@@ -4,7 +4,7 @@ use ratatui::{
     widgets::{Block, Borders, Padding, Paragraph},
 };
 
-use crate::app::state::{AppState, RECENT_DAYS, TabState};
+use crate::app::state::{AppState, TabState};
 
 /// Rows taken by the bottom border.
 const CHROME_HEIGHT: u16 = 1;
@@ -23,7 +23,7 @@ pub fn header_height(state: &AppState, width: u16) -> u16 {
         .saturating_add(CHROME_HEIGHT)
 }
 
-/// The selected account's name, type, balance, and totals over the recent period,
+/// The selected account's name, type, balance, and totals over the selected period,
 /// above the transaction list.
 pub fn draw_account_header(buf: &mut Buffer, area: Rect, state: &AppState) {
     let Some(tab) = state.current_tab() else {
@@ -64,7 +64,7 @@ fn header_lines(tab: &TabState, state: &AppState, width: usize) -> Vec<Line<'sta
         account.balance.format_signed(),
         fg(tokens::TEXT_PRIMARY).bold(),
     )];
-    let period = Span::styled(format!("Last {RECENT_DAYS} days  "), dim);
+    let period = Span::styled(format!("{}  ", state.period.name(state.today())), dim);
     // Stale totals stay visible while they're refreshed.
     let totals = match (tab.recent_totals(), tab.store.loading().is_some()) {
         (Some((money_in, money_out)), _) => vec![
@@ -111,6 +111,7 @@ fn ownership_name(ownership_type: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::state::Period;
     use crate::app::state::tests::{account, money, state, txn};
     use crate::client::models::{Account, Transaction};
 
@@ -130,8 +131,10 @@ mod tests {
             .collect()
     }
 
+    /// A state with a saver account, over the last 30 days: this month's name changes.
     fn state_with_saver() -> AppState {
         let mut state = state();
+        state.period = Period::Last30Days;
         state.set_accounts(vec![Account {
             display_name: "Holiday".to_string(),
             account_type: "SAVER".to_string(),

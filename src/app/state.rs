@@ -12,15 +12,66 @@ use crate::app::list::ListSelection;
 use crate::app::store::{PageOutcome, TransactionStore};
 use crate::client::models::{Account, MoneyObject, PaginatedResponse, Transaction};
 
-/// The number of days, including today, that the account header's totals and the
-/// Insights view cover.
-pub const RECENT_DAYS: i32 = 30;
+/// The period up to today that the account header's totals, the Insights view and
+/// its filtered transaction list cover (the store's "recent" transactions). There is
+/// one for all of them, so they always agree.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Period {
+    /// The calendar month so far, as Up's app shows by default.
+    #[default]
+    ThisMonth,
+    /// The last 30 days, including today.
+    Last30Days,
+}
 
-/// Start of the period the account header's totals cover: midnight at the start of
-/// the first of the last `RECENT_DAYS` days (including today) in `tz`.
-pub fn recent_since(today: Date, tz: &TimeZone) -> Option<Timestamp> {
-    let first_day = today.checked_sub((RECENT_DAYS - 1).days()).ok()?;
-    Some(first_day.to_zoned_datetime(tz.clone()).ok()?.timestamp())
+impl Period {
+    /// The next period, cycling through them all.
+    pub fn next(self) -> Self {
+        match self {
+            Period::ThisMonth => Period::Last30Days,
+            Period::Last30Days => Period::ThisMonth,
+        }
+    }
+
+    /// The period's name as of `today`, e.g. "November" or "Last 30 days".
+    pub fn name(self, today: Date) -> String {
+        match self {
+            Period::ThisMonth => today.strftime("%B").to_string(),
+            Period::Last30Days => "Last 30 days".to_string(),
+        }
+    }
+
+    /// The period at the end of a sentence as of `today`, e.g. "spent in November".
+    pub fn phrase(self, today: Date) -> String {
+        match self {
+            Period::ThisMonth => format!("in {}", today.strftime("%B")),
+            Period::Last30Days => "in the last 30 days".to_string(),
+        }
+    }
+
+    /// The period's first day, as of `today`.
+    pub fn first_day(self, today: Date) -> Date {
+        match self {
+            Period::ThisMonth => today.first_of_month(),
+            Period::Last30Days => today.saturating_sub(29.days()),
+        }
+    }
+
+    /// The period's last day, as of `today`: today, or the last day of this month, of
+    /// which only the days up to today have happened. The balance chart spans the days
+    /// from `first_day()` to this, so it fills in as the month goes on.
+    pub fn last_day(self, today: Date) -> Date {
+        match self {
+            Period::ThisMonth => today.last_of_month(),
+            Period::Last30Days => today,
+        }
+    }
+
+    /// The start of the period: midnight at the start of its first day in `tz`.
+    pub fn start(self, today: Date, tz: &TimeZone) -> Option<Timestamp> {
+        let first_day = self.first_day(today);
+        Some(first_day.to_zoned_datetime(tz.clone()).ok()?.timestamp())
+    }
 }
 
 /// A transient status message, shown in the header bar.
@@ -236,6 +287,9 @@ pub struct AppState {
     pub show_sidebar: bool,
     /// What the main area shows. It stays the same when switching accounts.
     pub view: View,
+    /// The period the header's totals and the Insights view cover. It stays the same
+    /// when switching accounts.
+    pub period: Period,
     pub insights: InsightsState,
     /// The transaction list's filter, if it's filtered. Only set in
     /// `View::Transactions`: leaving it (to go back to Insights) clears it.
@@ -268,6 +322,7 @@ impl AppState {
             show_detail: false,
             show_sidebar: true,
             view: View::Transactions,
+            period: Period::default(),
             insights: InsightsState::default(),
             filter: None,
             page_size: 0,
@@ -304,6 +359,11 @@ impl AppState {
     /// Index of the tab showing the given account.
     pub fn tab_index(&self, account_id: &str) -> Option<usize> {
         self.tabs.iter().position(|t| t.account.id == account_id)
+    }
+
+    /// The current local date, in `tz`.
+    pub fn today(&self) -> Date {
+        Timestamp::now().to_zoned_datetime(self.tz.clone()).date()
     }
 
     pub fn current_tab(&self) -> Option<&TabState> {
@@ -570,12 +630,42 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn recent_period_starts_at_local_midnight() {
+    fn periods_start_at_local_midnight() {
         let tz = TimeZone::get("Australia/Sydney").unwrap();
-        let since = recent_since("2026-11-23".parse().unwrap(), &tz).unwrap();
-        // 30 days including today: from midnight on 25 October, in daylight saving time
-        // (UTC+11).
-        assert_eq!(since.to_string(), "2026-10-24T13:00:00Z");
+        let today = "2026-11-23".parse().unwrap();
+        let start = |period: Period| period.start(today, &tz).unwrap().to_string();
+        // From midnight on 1 November, in daylight saving time (UTC+11).
+        assert_eq!(start(Period::ThisMonth), "2026-10-31T13:00:00Z");
+        // 30 days including today: from midnight on 25 October.
+        assert_eq!(start(Period::Last30Days), "2026-10-24T13:00:00Z");
+    }
+
+    #[test]
+    fn a_month_spans_all_its_days_and_the_last_30_days_end_today() {
+        let date = |s: &str| s.parse::<Date>().unwrap();
+        let days = |period: Period, today| {
+            let today = date(today);
+            (period.first_day(today), period.last_day(today))
+        };
+        assert_eq!(
+            days(Period::ThisMonth, "2026-02-01"),
+            (date("2026-02-01"), date("2026-02-28"))
+        );
+        assert_eq!(
+            days(Period::ThisMonth, "2026-12-31"),
+            (date("2026-12-01"), date("2026-12-31"))
+        );
+        assert_eq!(
+            days(Period::Last30Days, "2026-03-01"),
+            (date("2026-01-31"), date("2026-03-01"))
+        );
+        let today = date("2026-11-23");
+        assert_eq!(Period::ThisMonth.name(today), "November");
+        assert_eq!(Period::ThisMonth.phrase(today), "in November");
+        assert_eq!(Period::Last30Days.name(today), "Last 30 days");
+        assert_eq!(Period::Last30Days.phrase(today), "in the last 30 days");
+        // Cycling goes through them all.
+        assert_eq!(Period::default().next().next(), Period::default());
     }
 
     #[test]

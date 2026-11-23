@@ -7,7 +7,7 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::state::{AppState, RECENT_DAYS};
+use crate::app::state::AppState;
 use crate::app::store::LoadKind;
 use crate::client::models::{MoneyObject, Transaction};
 
@@ -108,7 +108,7 @@ fn list_status(state: &AppState) -> (Option<&'static str>, Option<Vec<&Transacti
     let Some(tab) = state.current_tab() else {
         return (None, None);
     };
-    // A filter shows the recent transactions, which are only there once loaded.
+    // A filter shows the period's transactions, which are only there once loaded.
     let transactions = match &state.filter {
         Some(filter) => tab.store.recent().map(|_| filter.transactions(tab)),
         None => tab
@@ -145,7 +145,7 @@ pub fn draw_filter_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!(" in the last {RECENT_DAYS} days"),
+            format!(" {}", state.period.phrase(state.today())),
             fg(tokens::TEXT_SECONDARY),
         ),
     ];
@@ -254,7 +254,7 @@ mod tests {
     use super::*;
     use crate::app::categories::{Categories, tests::named};
     use crate::app::state::{
-        CategoryFilter, TabState,
+        CategoryFilter, Period, TabState,
         tests::{account, money, txn},
     };
 
@@ -305,6 +305,8 @@ mod tests {
         ]);
         state.tabs.push(tab);
         state.filter = Some(CategoryFilter::new(Some("groceries".to_string())));
+        // This month's name changes; the transactions are within 30 days.
+        state.period = Period::Last30Days;
 
         let area = Rect::new(0, 0, 80, 12);
         let mut buf = Buffer::empty(area);

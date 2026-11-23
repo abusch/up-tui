@@ -24,6 +24,7 @@ const FILTERED_HINTS: &[(&str, &str)] = &[
     ("j/k", "move"),
     ("[/]", "day"),
     ("Enter", "detail"),
+    ("p", "period"),
     ("r", "refresh"),
     ("q", "quit"),
 ];
@@ -33,6 +34,7 @@ const INSIGHTS_HINTS: &[(&str, &str)] = &[
     ("h/l", "account"),
     ("j/k", "category"),
     ("Enter", "breakdown"),
+    ("p", "period"),
     ("i", "transactions"),
     ("a", "sidebar"),
     ("r", "refresh"),
@@ -46,6 +48,7 @@ const BREAKDOWN_HINTS: &[(&str, &str)] = &[
     ("j/k", "subcategory"),
     ("Enter", "transactions"),
     ("Esc", "back"),
+    ("p", "period"),
     ("i", "transactions"),
     ("a", "sidebar"),
     ("r", "refresh"),

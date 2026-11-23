@@ -41,14 +41,9 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState, beside_l
 
     let width = usize::from(block.inner(area).width);
     // The lines are already wrapped to the pane's width.
-    Paragraph::new(detail_lines(txn, state, width, local_today(state)))
+    Paragraph::new(detail_lines(txn, state, width, state.today()))
         .block(block)
         .render(area, buf);
-}
-
-/// The current local date.
-fn local_today(state: &AppState) -> Date {
-    Timestamp::now().to_zoned_datetime(state.tz.clone()).date()
 }
 
 /// The detail pane's content for `txn`, wrapped to `width` columns. `today` is the
