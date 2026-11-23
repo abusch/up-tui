@@ -160,6 +160,16 @@ impl App {
         match self.state.mode {
             AppMode::Normal => self.handle_normal_key(key),
             AppMode::Theme(ref mut selector) => {
+                // The picker only knows the arrow keys; it ignores Ctrl chords.
+                let key = match key.code {
+                    KeyCode::Char('p') if key.modifiers == KeyModifiers::CONTROL => {
+                        KeyEvent::new_with_kind(KeyCode::Up, KeyModifiers::NONE, key.kind)
+                    }
+                    KeyCode::Char('n') if key.modifiers == KeyModifiers::CONTROL => {
+                        KeyEvent::new_with_kind(KeyCode::Down, KeyModifiers::NONE, key.kind)
+                    }
+                    _ => key,
+                };
                 let action = selector.handle_key(key);
                 // The picker previews the highlighted theme (and applies the chosen one,
                 // or restores the original on Esc) by setting opaline's global theme.

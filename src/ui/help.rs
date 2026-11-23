@@ -50,7 +50,8 @@ const SECTIONS: &[(&str, &[(&str, &str)])] = &[
     (
         "Theme picker",
         &[
-            ("Up / Down", "Select a theme, previewing it"),
+            ("Up / Ctrl+P", "Previous theme, previewing it"),
+            ("Down / Ctrl+N", "Next theme, previewing it"),
             ("Type", "Filter the themes"),
             ("Enter", "Apply the theme (until the app exits)"),
             ("Esc", "Close without changing the theme"),

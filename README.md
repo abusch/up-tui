@@ -81,4 +81,4 @@ In the Insights view, `j` / `k` select a category, `Enter` shows its breakdown b
 
 If the window is too narrow for the transaction list and the detail pane side by side, the pane is shown in place of the list (the navigation keys still move through the transactions).
 
-In the theme picker, use `Up` / `Down` to move (the whole UI previews the highlighted theme), type to filter, `Enter` to apply the theme, and `Esc` to close without changing it. The chosen theme isn't saved; set `theme` in the config file to make it permanent.
+In the theme picker, use `Up` / `Down` (or `Ctrl+P` / `Ctrl+N`) to move (the whole UI previews the highlighted theme), type to filter, `Enter` to apply the theme, and `Esc` to close without changing it. The chosen theme isn't saved; set `theme` in the config file to make it permanent.
