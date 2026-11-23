@@ -57,6 +57,8 @@ To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`).
 
 ## Key Bindings
 
+The status bar shows the most useful keys for what's on screen; press `?` to see them all (`j` / `k` scroll the list if it doesn't fit, and `?`, `Esc` or `q` close it).
+
 | Key                    | Action                                   |
 |------------------------|------------------------------------------|
 | `Tab` / `l`            | Next account                             |
@@ -72,6 +74,7 @@ To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`).
 | `p`                    | Switch between this month and 30 days    |
 | `r`                    | Refresh accounts and transactions        |
 | `t`                    | Open the theme picker                    |
+| `?`                    | Show or hide the list of key bindings    |
 | `q` / `Ctrl+C`         | Quit                                     |
 
 In the Insights view, `j` / `k` select a category, `Enter` shows its breakdown by subcategory (where `j` / `k` select a subcategory), and `Esc` goes back to the list of categories. `Enter` on a subcategory shows its transactions over the period in the transaction list, with a bar above it saying what it's filtered by; `Esc` goes back to the breakdown.

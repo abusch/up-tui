@@ -2,30 +2,26 @@ use opaline::names::tokens;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Padding, Paragraph};
 
-use crate::app::state::{AppState, View};
+use crate::app::state::{AppMode, AppState, View};
 
-/// Key hints in normal mode (and behind the theme picker, which shows its own).
+/// Key hints in normal mode (and behind the theme picker, which shows its own). The
+/// status bar has room for only the most useful keys: the help screen lists them all.
 const NORMAL_HINTS: &[(&str, &str)] = &[
     ("h/l", "account"),
     ("j/k", "move"),
-    ("[/]", "day"),
     ("Enter", "detail"),
     ("i", "insights"),
-    ("a", "sidebar"),
-    ("r", "refresh"),
-    ("t", "theme"),
+    ("?", "help"),
     ("q", "quit"),
 ];
 
 /// Key hints in a filtered transaction list, opened from the Insights view.
 const FILTERED_HINTS: &[(&str, &str)] = &[
     ("Esc", "back to insights"),
-    ("h/l", "account"),
     ("j/k", "move"),
-    ("[/]", "day"),
     ("Enter", "detail"),
     ("p", "period"),
-    ("r", "refresh"),
+    ("?", "help"),
     ("q", "quit"),
 ];
 
@@ -36,31 +32,29 @@ const INSIGHTS_HINTS: &[(&str, &str)] = &[
     ("Enter", "breakdown"),
     ("p", "period"),
     ("i", "transactions"),
-    ("a", "sidebar"),
-    ("r", "refresh"),
-    ("t", "theme"),
+    ("?", "help"),
     ("q", "quit"),
 ];
 
 /// Key hints in the Insights view, showing a root category's breakdown.
 const BREAKDOWN_HINTS: &[(&str, &str)] = &[
-    ("h/l", "account"),
     ("j/k", "subcategory"),
     ("Enter", "transactions"),
     ("Esc", "back"),
     ("p", "period"),
-    ("i", "transactions"),
-    ("a", "sidebar"),
-    ("r", "refresh"),
-    ("t", "theme"),
+    ("?", "help"),
     ("q", "quit"),
 ];
+
+/// Key hints on the help screen.
+const HELP_HINTS: &[(&str, &str)] = &[("j/k", "scroll"), ("Esc", "close"), ("Ctrl+C", "quit")];
 
 pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
     let info: Style = state.theme.color(tokens::INFO).into();
     let fg: Style = state.theme.color(tokens::TEXT_DIM).into();
 
     let hints = match state.view {
+        _ if matches!(state.mode, AppMode::Help { .. }) => HELP_HINTS,
         View::Transactions if state.filter.is_some() => FILTERED_HINTS,
         View::Transactions => NORMAL_HINTS,
         View::Insights if state.insights.breakdown => BREAKDOWN_HINTS,

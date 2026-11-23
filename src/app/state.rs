@@ -188,6 +188,10 @@ impl CategorySelection {
 pub enum AppMode {
     Normal,
     Theme(ThemeSelectorState),
+    /// The help screen, scrolled down `scroll` lines (clamped when it's drawn).
+    Help {
+        scroll: u16,
+    },
 }
 
 /// A tab: one account, its transactions, and the state of its transaction list.

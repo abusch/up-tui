@@ -172,6 +172,17 @@ impl App {
                     self.state.mode = AppMode::Normal;
                 }
             }
+            AppMode::Help { ref mut scroll } => match key.code {
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.state.should_quit = true;
+                }
+                KeyCode::Char('?') | KeyCode::Char('q') | KeyCode::Esc => {
+                    self.state.mode = AppMode::Normal;
+                }
+                KeyCode::Char('j') | KeyCode::Down => *scroll = scroll.saturating_add(1),
+                KeyCode::Char('k') | KeyCode::Up => *scroll = scroll.saturating_sub(1),
+                _ => {}
+            },
         }
     }
 
@@ -222,6 +233,9 @@ impl App {
             }
             KeyCode::Char('t') => {
                 self.state.mode = AppMode::Theme(ThemeSelectorState::with_current_selected());
+            }
+            KeyCode::Char('?') => {
+                self.state.mode = AppMode::Help { scroll: 0 };
             }
             _ if self.state.view == View::Insights => self.handle_insights_key(key),
             KeyCode::Enter => {

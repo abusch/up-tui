@@ -763,7 +763,7 @@ mod tests {
     use crate::app::{
         App,
         categories::Categories,
-        state::{CategoryFilter, Period, View},
+        state::{AppMode, CategoryFilter, Period, View},
     };
     use crate::client::Client;
     use crossterm::event::{KeyCode, KeyEvent};
@@ -1039,6 +1039,27 @@ mod tests {
         assert!(!app.state.show_detail);
     }
 
+    #[tokio::test]
+    async fn question_mark_shows_and_hides_the_help() {
+        let mut app = demo_app(&now());
+        press(&mut app, &[KeyCode::Char('?')]);
+        assert!(matches!(app.state.mode, AppMode::Help { scroll: 0 }));
+        // j/k scroll it, rather than moving in the list behind it.
+        press(&mut app, &[KeyCode::Char('j'), KeyCode::Char('j')]);
+        assert!(matches!(app.state.mode, AppMode::Help { scroll: 2 }));
+        assert_eq!(app.state.tabs[0].list.selected, 0);
+        press(&mut app, &[KeyCode::Char('?')]);
+        assert!(matches!(app.state.mode, AppMode::Normal));
+        // It opens scrolled to the top; q and Esc close it too, without quitting.
+        for key in [KeyCode::Char('q'), KeyCode::Esc] {
+            press(&mut app, &[KeyCode::Char('?')]);
+            assert!(matches!(app.state.mode, AppMode::Help { scroll: 0 }));
+            press(&mut app, &[key]);
+            assert!(matches!(app.state.mode, AppMode::Normal));
+            assert!(!app.state.should_quit);
+        }
+    }
+
     #[test]
     fn the_app_shows_the_demo_data_in_every_view() {
         let mut app = demo_app(&now());
@@ -1070,8 +1091,16 @@ mod tests {
             app.state.filter = None;
             app.state.insights.breakdown = false;
         }
+        // The help screen, and in a small terminal, scrolled to the bottom.
+        app.state.mode = AppMode::Help { scroll: 0 };
+        screens.push(render(&mut app, 120, 40));
+        app.state.mode = AppMode::Help { scroll: u16::MAX };
+        screens.push(render(&mut app, 80, 24));
+        app.state.mode = AppMode::Normal;
         let all = screens.join("\n");
         for expected in [
+            "Show or hide this help",
+            "Close without changing the theme",
             "Spending",
             "2Up Spending",
             "Holiday",

@@ -1,5 +1,6 @@
 pub mod account_header;
 pub mod header_bar;
+pub mod help;
 pub mod insights;
 pub mod sidebar;
 pub mod status_bar;
@@ -71,6 +72,9 @@ impl Widget for &mut App {
         ])
         .areas(area);
         header_bar::draw_header_bar(buf, header_bar, &self.state);
+        // The help popup goes between the header and status bars, leaving the status
+        // bar's hints (on how to scroll it) visible.
+        let help_area = main;
 
         // Account sidebar on the left, if shown.
         let main = if self.state.show_sidebar {
@@ -120,6 +124,9 @@ impl Widget for &mut App {
 
         status_bar::draw_status_bar(buf, status, &self.state);
 
+        if let AppMode::Help { ref mut scroll } = self.state.mode {
+            help::draw_help(buf, help_area, &self.state.theme, scroll);
+        }
         if let AppMode::Theme(ref mut state) = self.state.mode {
             let centered_area = area.centered(Constraint::Ratio(2, 3), Constraint::Ratio(3, 4));
             Clear.render(centered_area, buf);
