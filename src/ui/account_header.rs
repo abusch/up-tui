@@ -29,9 +29,14 @@ pub fn draw_account_header(buf: &mut Buffer, area: Rect, state: &AppState) {
     let Some(tab) = state.current_tab() else {
         return;
     };
+    // On the panel background, like the sidebar and the detail pane, framing the list.
+    // Not `BG_ELEVATED`/`BG_ACTIVE`: in most themes they are the selection's colour,
+    // so the header would look like a selected row. The border separates it from the
+    // list in themes where `BG_PANEL` is the same colour as `BG_BASE`.
     let block = Block::default()
         .borders(Borders::BOTTOM)
         .border_style(state.theme.color(tokens::BORDER_UNFOCUSED))
+        .style(Style::default().bg(state.theme.color(tokens::BG_PANEL).into()))
         .padding(Padding::horizontal(1));
     let width = usize::from(block.inner(area).width);
     Paragraph::new(header_lines(tab, state, width))
@@ -48,7 +53,7 @@ fn header_lines(tab: &TabState, state: &AppState, width: usize) -> Vec<Line<'sta
     let title = Line::from(vec![
         Span::styled(
             account.display_name.clone(),
-            fg(tokens::TEXT_PRIMARY).bold(),
+            fg(tokens::ACCENT_PRIMARY).bold(),
         ),
         Span::styled(
             format!(
