@@ -1,15 +1,15 @@
 use opaline::names::tokens;
 use ratatui::{
     prelude::*,
-    widgets::{Block, HighlightSpacing, List, ListItem, Padding},
+    widgets::{Block, HighlightSpacing, List, ListItem, Padding, Paragraph},
 };
 
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::state::AppState;
+use crate::app::state::{AppState, RECENT_DAYS};
 use crate::app::store::LoadKind;
-use crate::client::models::Transaction;
+use crate::client::models::{MoneyObject, Transaction};
 
 pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState) {
     let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
@@ -18,41 +18,32 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let selection = state.theme.color(tokens::BG_SELECTION).into();
 
     let base_style = Style::default().fg(fg).bg(bg);
-    let block = |title: String| {
-        Block::default()
-            .title(title)
-            .title_style(accent)
-            .padding(Padding::uniform(1))
-            .style(base_style)
-    };
-
     // Record how many transactions fit in the list, for Ctrl+D/Ctrl+U paging and for
     // deciding when to load the next page. Each transaction item is 2 rows tall; day
     // separator rows are ignored, so this is an upper bound.
-    state.page_size = usize::from(block(String::new()).inner(area).height / 2);
+    let mut block = Block::default()
+        .padding(Padding::uniform(1))
+        .style(base_style);
+    let inner = block.inner(area);
+    state.page_size = usize::from(inner.height / 2);
 
-    // The title shows the loading status. (The account header names the account.)
-    let (status, transactions) = match state.current_tab() {
-        None => ("", None),
-        Some(tab) => match (tab.store.transactions(), tab.store.loading()) {
-            (None, Some(_)) => (" - Loading...", None),
-            (Some(txns), loading) if !txns.is_empty() => {
-                let status = match loading {
-                    Some(LoadKind::Replace) => " - Refreshing...",
-                    Some(LoadKind::Append) => " - Loading more...",
-                    None => "",
-                };
-                (status, Some(txns))
+    // No title, as it's clearly a list of transactions (and the account header names
+    // the account), except for the loading status, if any.
+    let (status, transactions) = list_status(state);
+    if let Some(status) = status {
+        block = block.title(format!(" {status} ")).title_style(accent);
+    }
+
+    let transactions = match transactions {
+        Some(txns) if !txns.is_empty() => txns,
+        loaded => {
+            block.render(area, buf);
+            if loaded.is_some() {
+                let dim = Style::default().fg(state.theme.color(tokens::TEXT_DIM).into());
+                Paragraph::new(Line::styled("No transactions.", dim)).render(inner, buf);
             }
-            (Some(_), _) => (" - No transactions", None),
-            (None, None) => ("", None),
-        },
-    };
-    let title = format!(" Transactions{status} ");
-
-    let Some(transactions) = transactions else {
-        block(title).render(area, buf);
-        return;
+            return;
+        }
     };
 
     // 2 for horizontal padding + 2 for highlight symbol ("▎ ")
@@ -60,7 +51,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let tz = state.tz.clone();
 
     // Build list items with day separators. Track which list index corresponds
-    // to each transaction so we can map `tab.selected` to the right row.
+    // to each transaction so we can map the selection to the right row.
     let mut items: Vec<ListItem> = Vec::new();
     let mut txn_to_list_index: Vec<usize> = Vec::new();
     let mut last_date: Option<jiff::civil::Date> = None;
@@ -87,16 +78,111 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     }
 
     let list = List::new(items)
-        .block(block(title))
+        .block(block)
         .highlight_style(Style::default().bg(selection).add_modifier(Modifier::BOLD))
         .highlight_symbol(Line::styled("▎ ", accent))
         .highlight_spacing(HighlightSpacing::Always)
         .repeat_highlight_symbol(true);
 
-    let tab = state.current_tab_mut().unwrap();
-    let list_index = txn_to_list_index.get(tab.selected).copied().unwrap_or(0);
-    tab.list_state.select(Some(list_index));
-    StatefulWidget::render(list, area, buf, &mut tab.list_state);
+    let Some((_, selection)) = state.list_mut() else {
+        return;
+    };
+    let list_index = txn_to_list_index
+        .get(selection.selected)
+        .copied()
+        .unwrap_or(0);
+    selection.list_state.select(Some(list_index));
+    StatefulWidget::render(list, area, buf, &mut selection.list_state);
+}
+
+/// The list's loading status, if it's loading, and the transactions it shows (the
+/// filter's, or all the active tab's loaded ones), if they're loaded.
+fn list_status(state: &AppState) -> (Option<&'static str>, Option<Vec<&Transaction>>) {
+    let Some(tab) = state.current_tab() else {
+        return (None, None);
+    };
+    // A filter shows the recent transactions, which are only there once loaded.
+    let transactions = match &state.filter {
+        Some(filter) => tab.store.recent().map(|_| filter.transactions(tab)),
+        None => tab
+            .store
+            .transactions()
+            .map(|txns| txns.iter().collect::<Vec<_>>()),
+    };
+    let status = match (tab.store.loading(), &transactions) {
+        (None, _) => None,
+        (Some(_), None) => Some("Loading..."),
+        (Some(LoadKind::Replace), Some(_)) => Some("Refreshing..."),
+        (Some(LoadKind::Append), Some(_)) => Some("Loading more..."),
+    };
+    (status, transactions)
+}
+
+/// The bar above a filtered list (and the detail pane): the category (in its colour)
+/// and period it shows, and, on the right, how many transactions there are and their
+/// total.
+pub fn draw_filter_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
+    let (Some(filter), Some(tab)) = (&state.filter, state.current_tab()) else {
+        return;
+    };
+    let theme = &state.theme;
+    let fg = |token| Style::default().fg(theme.color(token).into());
+    let category = filter.category.as_deref();
+
+    let left = vec![
+        Span::styled(" Spending on ", fg(tokens::TEXT_SECONDARY)),
+        Span::styled(
+            category_path(category, state),
+            Style::default()
+                .fg(state.category_color(category))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" in the last {RECENT_DAYS} days"),
+            fg(tokens::TEXT_SECONDARY),
+        ),
+    ];
+    let txns = filter.transactions(tab);
+    let zero = tab.account.balance.zero_like();
+    let total = MoneyObject::sum(std::iter::once(&zero).chain(txns.iter().map(|t| &t.amount)));
+    let count = match txns.len() {
+        1 => "1 transaction".to_string(),
+        n => format!("{n} transactions"),
+    };
+    let right = match total {
+        Some(total) => format!("{count}, {} ", total.format_unsigned()),
+        None => format!("{count} "),
+    };
+
+    // The right part is left out if it doesn't fit.
+    let left_width: usize = left.iter().map(|s| s.content.width()).sum();
+    let width = usize::from(area.width);
+    let mut spans = left;
+    if left_width + 1 + right.width() <= width {
+        spans.push(Span::raw(" ".repeat(width - left_width - right.width())));
+        spans.push(Span::styled(right, fg(tokens::TEXT_DIM)));
+    }
+    Paragraph::new(Line::from(spans))
+        .style(Style::default().bg(theme.color(tokens::BG_HIGHLIGHT).into()))
+        .render(area, buf);
+}
+
+/// A category's name with its parent's, like the detail pane's
+/// ("Good Life › Restaurants & Cafes"), or "Uncategorised".
+fn category_path(category: Option<&str>, state: &AppState) -> String {
+    let Some(id) = category else {
+        return "Uncategorised".to_string();
+    };
+    let root = state.categories.root(id);
+    if root == id {
+        state.category_name(id).to_string()
+    } else {
+        format!(
+            "{} › {}",
+            state.category_name(root),
+            state.category_name(id)
+        )
+    }
 }
 
 fn build_transaction_item<'a>(
@@ -159,9 +245,10 @@ pub(super) fn truncate_to_width(s: &str, max_width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::categories::{Categories, tests::named};
     use crate::app::state::{
-        TabState,
-        tests::{account, txn},
+        CategoryFilter, TabState,
+        tests::{account, money, txn},
     };
 
     #[test]
@@ -183,6 +270,81 @@ mod tests {
             marker.fg,
             Color::from(state.theme.color(tokens::ACCENT_PRIMARY))
         );
+    }
+
+    #[test]
+    fn a_filtered_list_shows_only_the_category_with_a_bar_above() {
+        let mut state = AppState::new(None);
+        state.tz = jiff::tz::TimeZone::UTC;
+        state.categories = Categories::new([
+            named("home", "Home", None),
+            named("groceries", "Groceries", Some("home")),
+        ]);
+        let now = jiff::Timestamp::now();
+        let at = |hours: i64| (now - jiff::SignedDuration::from_hours(hours)).to_string();
+        let groceries = |id, hours, cents| Transaction {
+            category: Some("groceries".to_string()),
+            parent_category: Some("home".to_string()),
+            amount: money(cents),
+            ..txn(id, &at(hours))
+        };
+        let mut tab = TabState::new(account("a", 0));
+        tab.set_transactions(vec![
+            groceries("g1", 1, -1250),
+            txn("other", &at(2)),
+            groceries("g2", 3, -2000),
+            // A refund isn't spending.
+            groceries("refund", 4, 500),
+        ]);
+        state.tabs.push(tab);
+        state.filter = Some(CategoryFilter::new(Some("groceries".to_string())));
+
+        let area = Rect::new(0, 0, 80, 12);
+        let mut buf = Buffer::empty(area);
+        let [bar, list] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+        draw_filter_bar(&mut buf, bar, &state);
+        draw_transaction_list(&mut buf, list, &mut state);
+        let rows: Vec<String> = (0..area.height)
+            .map(|y| (0..area.width).map(|x| buf[(x, y)].symbol()).collect())
+            .collect();
+        assert_eq!(
+            rows[0].trim_end(),
+            " Spending on Home › Groceries in the last 30 days        2 transactions, $32.50"
+        );
+        let shown = rows.join("\n");
+        assert!(shown.contains("Transaction g1") && shown.contains("Transaction g2"));
+        assert!(!shown.contains("Transaction other") && !shown.contains("refund"));
+    }
+
+    #[test]
+    fn the_title_is_only_the_loading_status() {
+        let mut state = AppState::new(None);
+        let mut tab = TabState::new(account("a", 0));
+        tab.set_transactions(Vec::new());
+        state.tabs.push(tab);
+        let area = Rect::new(0, 0, 40, 6);
+        let render = |state: &mut AppState| {
+            let mut buf = Buffer::empty(area);
+            draw_transaction_list(&mut buf, area, state);
+            (0..area.height)
+                .map(|y| {
+                    let row: String = (0..area.width).map(|x| buf[(x, y)].symbol()).collect();
+                    row.trim_end().to_string()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        // Loaded and empty: no title, and a message in the list.
+        let rows = render(&mut state);
+        assert_eq!(rows[0], "");
+        assert_eq!(rows[1], " No transactions.");
+
+        // Refreshing.
+        state.tabs[0]
+            .store
+            .refresh("2026-11-01T00:00:00Z".parse().unwrap());
+        assert_eq!(render(&mut state)[0], " Refreshing...");
     }
 
     #[test]

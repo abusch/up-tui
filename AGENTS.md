@@ -63,6 +63,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `show_sidebar` — whether the account sidebar is visible (it is by default)
 - `view` — `View::Transactions` (the transaction list and detail pane) or `View::Insights`; toggled with `i`, and kept when switching accounts
 - `insights` — `InsightsState`: the root category selected in the Insights view, whether its breakdown is shown, and the subcategory selected in the breakdown. Each selection is a `CategorySelection`, which stores the category's id, so it stays on the same category when the order changes or when switching accounts (and is the first row if that category isn't in the list)
+- `filter` — the transaction list's `CategoryFilter`, if it's filtered (see Filtered Transaction List). Only set in `View::Transactions`
 - `message` — the status message shown in the header bar (`Message`: its text and `MessageKind`, `Info`, `Success` or `Error`), if any
 - `page_size` — how many transactions fit in the list view (computed from the list block's inner area, 2 rows per item); written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
 
@@ -70,8 +71,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 
 - `account` — the `Account` this tab shows (name, type, ownership, balance)
 - `store` — the account's `TransactionStore` (see below)
-- `selected` — index into the store's transactions. Invariant: `selected < len` (or 0 when empty). Pages go into the store through `TabState::page_loaded()`, which, when the list is replaced, keeps the same transaction selected (by `id`) if it is still present and clamps otherwise.
-- `list_state` — ratatui `ListState`, used for scrolling
+- `list` — the `ListSelection` (`src/app/list.rs`) in the list of all the store's transactions: `selected`, an index into them (invariant: `selected < len`, or 0 when empty), and `list_state`, the ratatui `ListState` used for scrolling. Pages go into the store through `TabState::page_loaded()`, which, when the list is replaced, keeps the same transaction selected (by `id`) if it is still present and clamps otherwise.
 
 `recent_totals()` adds up the recent period's transactions into money in and money out.
 
@@ -95,20 +95,26 @@ Status messages (loading, success, errors) are shown in the header bar, along th
 
 ### Rendering
 
-`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the header bar along the top, the account sidebar on the left (when `show_sidebar` is set), the transaction list (and the detail pane on the right, taking one third of the screen's width, when `show_detail` is set; the list takes whatever is left), the status bar, the detail popup when in `AppMode::Detail`, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size`, updates each tab's `list_state`.
+`impl Widget for &mut App` in `src/ui/mod.rs` draws the background, the header bar along the top, the account sidebar on the left (when `show_sidebar` is set), the transaction list (and the detail pane on the right, taking one third of the screen's width, when `show_detail` is set; the list takes whatever is left), the status bar, the detail popup when in `AppMode::Detail`, and the theme picker overlay when in `AppMode::Theme`. Rendering takes `&mut` because it records `page_size` and updates the list's `list_state`.
 
 The sidebar (`src/ui/sidebar.rs`) lists the accounts under a heading per account type, each with its balance right-aligned, the selected one highlighted like the selected transaction, and the total of all balances at the bottom (when there's more than one account and `MoneyObject::sum` can add them up, i.e. they're in the same currency). Its width fits the longest row, between 20 and 40 columns and at most a third of the screen; longer names are truncated. 
-The account header (`src/ui/account_header.rs`) sits above the transaction list and the detail pane. It shows the selected account's name, type and ownership on one line, then its balance and, right-aligned, its money in and out over the last 30 days (on a line of their own if they don't fit). The totals show "loading…" until they're loaded, the stale totals while they're refreshed, and nothing if loading failed. Its height comes from `header_height()` (0 when there is no account yet). Because the header names the account, the list's title is just "Transactions" plus the loading status. `ui::right_aligned()` is the shared helper for a line with a right-aligned part that wraps onto its own line when it doesn't fit (also used for the detail pane's amount and status).
+The account header (`src/ui/account_header.rs`) sits above the transaction list and the detail pane. It shows the selected account's name, type and ownership on one line, then its balance and, right-aligned, its money in and out over the last 30 days (on a line of their own if they don't fit). The totals show "loading…" until they're loaded, the stale totals while they're refreshed, and nothing if loading failed. Its height comes from `header_height()` (0 when there is no account yet). The transaction list has no title (it's clearly a list of transactions, and the header names the account), except while loading, when the title is the loading status ("Loading...", "Refreshing...", "Loading more..."); an empty list says "No transactions." in its body. The detail pane has no title either. The list's right padding separates it from the detail pane's left border. `ui::right_aligned()` is the shared helper for a line with a right-aligned part that wraps onto its own line when it doesn't fit (also used for the detail pane's amount and status).
 
 The Insights view (`src/ui/insights.rs`) replaces the transaction list and detail pane below the header when `view` is `View::Insights`. It's computed from the store's `recent()` transactions (the same 30 days as the header's totals), with the statistics in `src/app/insights.rs` as pure, unit-tested functions:
 
 - **Balance** (`daily_balances()`), at the top: the balance at the end of each day, worked backwards from the current balance through the recent transactions, drawn as a ratatui `Chart` (Braille line) with the first, middle and last dates. The vertical axis (`YAxis`) always includes zero, so the line's height is in proportion to the balance rather than exaggerating small changes, and is rounded out to multiples of a round step (1, 2 or 5 × a power of ten, at least one whole currency unit), which label it as whole amounts ("$2000"). The section has a fixed height (`BALANCE_HEIGHT`), so the chart is the same size for every account; on a short screen it shrinks to leave room for the categories, and is left out below `MIN_BALANCE_HEIGHT`.
 - **Spending by category** (`spending_by_root()`), below it: the debits, excluding transfers between the user's own accounts (`transfer_account` is set), summed per root category (the transaction's `parent_category`, or its `category` if it has none, so it doesn't depend on the categories having loaded; `None` is shown as "Uncategorised"), largest first; refunds aren't subtracted. Each category is a row with a bar (in eighths of a column, relative to the largest) in its category's colour (see Theming), the amount and its share. One row is selected (marked and highlighted like the selected transaction); `j`/`k` move the selection.
-- **Breakdown** (`spending_in_root()`), in place of the list when `insights.breakdown` is set (`Enter`; `Esc` goes back): the selected root category's spending by subcategory, drawn the same way, with its total and share of all spending. `j`/`k` select a subcategory.
+- **Breakdown** (`spending_in_root()`), in place of the list when `insights.breakdown` is set (`Enter`; `Esc` goes back): the selected root category's spending by subcategory, drawn the same way, with its total and share of all spending. `j`/`k` select a subcategory, and `Enter` shows its transactions in the transaction list (see below).
 
 Both lists are drawn by `CategorySection` and get the space left by the balance section. If the rows don't fit, the list scrolls to keep the selection in view (rows aren't grouped into an "Other" row, since every row can be selected).
 
 While `recent()` isn't loaded, the view shows "Loading…", or a message to press `r` if loading failed.
+
+### Filtered Transaction List
+
+`Enter` on a subcategory in the Insights breakdown sets `state.filter` to a `CategoryFilter` for it and switches to `View::Transactions`: the list then shows only the transactions that make up that row (`spending_in_category()`: the category's debits over the recent period, without transfers between the user's accounts), so they add up to its amount. Everything else in that view works as usual on the filtered list (navigation, the detail pane and popup, refresh). It's made clear that the list is filtered by a bar above the list and the detail pane (`draw_filter_bar()`: "Spending on Home › Groceries in the last 30 days", with the count and total on the right) and the status bar hints. `Esc`/`Backspace` clears the filter and goes back to the breakdown; `i` clears it too. Switching accounts keeps the filter (showing the same category in the other account) and selects its first transaction.
+
+The filter has its own `ListSelection`, so the unfiltered list's selection is kept. Code that acts on "the list" goes through `AppState::list_mut()`, which returns the transactions shown (the filter's or all the active tab's) and their selection (clamped to them, as a filter's list can change on refresh), and `AppState::selected_transaction()`. The filter's transactions are recomputed from the store whenever they're needed, rather than stored, so they're never stale.
 
 The detail pane and the detail popup (both in `src/ui/transaction_detail.rs`) show the same content, built by `detail_lines()`, for `state.selected_transaction()`. The popup is centred, at most 72 columns wide, and shrinks to the height of its content; it draws nothing if no transaction is selected. The content has a header (description, amount with the status right-aligned, category in its colour, tags) followed by sections (When, Details, Note, Message, Raw text) that are left out when empty. Redundant information is hidden: the hold amount when it equals the final amount, and the raw text when it matches the description. Its lines are wrapped to the pane's width by `textwrap` (first-fit), with long field values indented to the value column, so the `Paragraph` is rendered without its own wrapping. Dates are shown as "Today, 14:32", "Yesterday, …" or "Mon 18 Nov, …" (with the year only if it isn't the current one).
 
@@ -128,7 +134,8 @@ src/
 
   app/
     mod.rs             App: main loop, event and key handling, fetch spawning, status messages
-    state.rs           AppState, AppMode, View, TabState
+    state.rs           AppState, AppMode, View, TabState, InsightsState, CategoryFilter
+    list.rs            ListSelection: the selection in a list of transactions, and navigation
     store.rs           TransactionStore: an account's transactions, paging, refresh
     categories.rs      Categories: names, parents, and the root categories' colour tokens
     insights.rs        Statistics for the Insights view (spending by root category and subcategory, daily balances)
@@ -140,7 +147,7 @@ src/
     header_bar.rs      Header bar: app name and version, status messages
     account_header.rs  Selected account's name, type, balance and 30-day totals
     insights.rs        Insights view: spending by category bars and breakdown, balance chart
-    transaction_list.rs  Transaction list grouped by day, description truncation
+    transaction_list.rs  Transaction list grouped by day, filter bar, description truncation
     transaction_detail.rs  Detail pane and popup with full transaction info
     status_bar.rs      Keybinding hints, per mode
 ```
@@ -183,8 +190,9 @@ When adding something the UI shows, add it to the demo data too (in `Generator::
 | `a`                 | Normal       | Toggle the account sidebar                  |
 | `i`                 | Normal       | Switch between the transaction list and the Insights view |
 | `j`/`k` / `↓`/`↑`   | Insights     | Select a root category (or a subcategory in a breakdown) |
-| `Enter`             | Insights     | Show the selected category's breakdown by subcategory |
+| `Enter`             | Insights     | Show the selected category's breakdown by subcategory, or in a breakdown, the selected subcategory's transactions |
 | `Esc` / `Backspace` | Insights     | Back to the list of root categories         |
+| `Esc` / `Backspace` | Normal, filtered list | Clear the filter and go back to the Insights breakdown |
 | `Esc` / `Enter` / `q` | Detail popup | Close the popup                           |
 | `Ctrl+C`            | Detail popup | Quit                                        |
 | navigation keys     | Detail popup | As in Normal mode (`j`/`k`, `Ctrl+D`/`Ctrl+U`, `g`/`G`, `[`/`]`); the popup shows the newly selected transaction |
@@ -195,7 +203,7 @@ When adding something the UI shows, add it to the demo data too (in `Generator::
 | `Enter`             | Theme picker | Apply the selected theme                    |
 | `Esc`               | Theme picker | Close without changing the theme            |
 
-Key handling lives in `App::handle_key`, which dispatches on the mode to `App::handle_normal_key`, `App::handle_detail_key`, or `ThemeSelectorState::handle_key`. The navigation keys, shared by Normal mode and the detail popup, are in `App::handle_navigation_key`. Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. In the Insights view, the keys that act on the transaction list are handled by `App::handle_insights_key` instead, which selects root categories or subcategories and opens or closes the breakdown (`InsightsState`). After every Normal-mode or detail-popup key, `load_tab()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` (one list per mode, and for the Insights view with and without a breakdown) should be kept in sync with the bindings.
+Key handling lives in `App::handle_key`, which dispatches on the mode to `App::handle_normal_key`, `App::handle_detail_key`, or `ThemeSelectorState::handle_key`. The navigation keys, shared by Normal mode and the detail popup, are in `App::handle_navigation_key`. Selection movement is implemented as `ListSelection` methods (`select_next`, `page_down`, `select_next_day`, …), which take the list's transactions, keep `selected` in bounds and are unit-tested; the key handler applies them to the list shown (`AppState::list_mut()`). In the Insights view, the keys that act on the transaction list are handled by `App::handle_insights_key` instead, which selects root categories or subcategories and opens or closes the breakdown (`InsightsState`). After every Normal-mode or detail-popup key, `load_tab()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` (one list per mode, for the filtered list, and for the Insights view with and without a breakdown) should be kept in sync with the bindings.
 
 ## Theming
 
@@ -211,11 +219,11 @@ All UI modules read colors from `state.theme` via semantic tokens (`opaline::nam
 - `BG_ELEVATED` — detail popup and theme picker backgrounds
 - `BORDER_FOCUSED` — the detail popup's border
 - `BG_SELECTION` — selected transaction and account background
-- `ACCENT_PRIMARY` — the app name in the header bar; sidebar, list, Insights, detail pane and popup titles, selection markers, the balance chart's line
+- `ACCENT_PRIMARY` — the app name in the header bar; sidebar, Insights and popup titles, the list's loading status, selection markers, the balance chart's line
 - `TEXT_MUTED` — foreign amounts and raw text in the detail pane, and the colour for no category (or an unknown one); `TEXT_DIM` — the version in the header bar, day separators, sidebar, detail pane and Insights section headings, the Insights shares, chart axes and labels, the account header's type and labels, times, status bar text
-- `TEXT_SECONDARY` — field labels in the detail pane; tag text; the sidebar's total; status message text (other than errors)
+- `TEXT_SECONDARY` — field labels in the detail pane; tag text; the sidebar's total; status message text (other than errors); the filter bar's text (with the category in its colour, and the count and total in `TEXT_DIM`)
 - Category colours, from `state.category_color()` (the category in the detail pane header and the Insights category bars): each of Up's root categories has a fixed token, and its children get the same colour (`ROOT_COLORS` in `src/app/categories.rs`): Good Life `WARNING`, Home `INFO`, Personal `SUCCESS`, Transport `ERROR`. They're the status tokens because those are clearly different hues in every builtin theme (a test checks that they're all different); other tokens, like the accents, repeat in some themes. Other categories (if Up adds a root category) are `TEXT_MUTED`.
-- `BG_HIGHLIGHT` — the header bar's and status bar's background, tag backgrounds in the detail pane
+- `BG_HIGHLIGHT` — the header bar's, status bar's and filter bar's background, tag backgrounds in the detail pane
 - Amounts: `TEXT_PRIMARY` for debits (and money out in the account header), `SUCCESS` for credits (and money in)
 - `SUCCESS` / `WARNING` — settled / pending (held) status
 - `INFO` — keybinding hints in the status bar

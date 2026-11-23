@@ -20,8 +20,6 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     // The left border separates the pane from the list: in some themes `BG_PANEL` is
     // the same colour as the list's `BG_BASE`.
     let block = Block::default()
-        .title(" Detail ")
-        .title_style(state.theme.color(tokens::ACCENT_PRIMARY))
         .borders(Borders::LEFT)
         .border_style(state.theme.color(tokens::BORDER_UNFOCUSED))
         .style(Style::default().fg(fg).bg(bg))

@@ -74,7 +74,7 @@ To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`).
 | `t`                    | Open the theme picker                    |
 | `q` / `Ctrl+C`         | Quit                                     |
 
-In the Insights view, `j` / `k` select a category, `Enter` shows its breakdown by subcategory (where `j` / `k` select a subcategory), and `Esc` goes back to the list of categories.
+In the Insights view, `j` / `k` select a category, `Enter` shows its breakdown by subcategory (where `j` / `k` select a subcategory), and `Esc` goes back to the list of categories. `Enter` on a subcategory shows its transactions over the last 30 days in the transaction list, with a bar above it saying what it's filtered by; `Esc` goes back to the breakdown.
 
 In the details popup, the navigation keys move to other transactions, and `Esc`, `Enter` or `q` close it.
 

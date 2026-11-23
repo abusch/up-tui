@@ -31,6 +31,25 @@ pub fn spending_in_root(transactions: &[Transaction], root: Option<&str>) -> Vec
     })
 }
 
+/// The transactions counted as spending in `category` (`None`: those without a
+/// category), as in `spending_in_root`: so they add up to that category's row.
+pub fn spending_in_category<'a>(
+    transactions: &'a [Transaction],
+    category: Option<&str>,
+) -> Vec<&'a Transaction> {
+    transactions
+        .iter()
+        .filter(|t| is_spending(t) && t.category.as_deref() == category)
+        .collect()
+}
+
+/// Whether a transaction counts as spending: a debit that isn't a transfer between the
+/// user's own accounts (including round-ups to savers). Refunds aren't subtracted from
+/// spending, so they don't count.
+fn is_spending(txn: &Transaction) -> bool {
+    txn.amount.is_negative() && txn.transfer_account.is_none()
+}
+
 /// The root category a transaction is in: its category's parent, or its category if
 /// that has no parent (Up's categories are two levels deep). This comes with the
 /// transaction, so it doesn't depend on the categories having loaded.
@@ -38,19 +57,14 @@ fn root_category(txn: &Transaction) -> Option<&str> {
     txn.parent_category.as_deref().or(txn.category.as_deref())
 }
 
-/// Money spent, grouped by `group`, which gives a debit's category for the result (or
-/// `None` to leave the debit out): the debits, excluding transfers between the user's
-/// own accounts (including round-ups to savers), largest first. Refunds aren't
-/// subtracted.
+/// Money spent (see `is_spending`), grouped by `group`, which gives a transaction's
+/// category for the result (or `None` to leave it out), largest first.
 fn spending_by<'a>(
     transactions: &'a [Transaction],
     group: impl Fn(&'a Transaction) -> Option<Option<&'a str>>,
 ) -> Vec<CategorySpending> {
     let mut totals: HashMap<Option<&str>, i64> = HashMap::new();
-    for txn in transactions
-        .iter()
-        .filter(|t| t.amount.is_negative() && t.transfer_account.is_none())
-    {
+    for txn in transactions.iter().filter(|t| is_spending(t)) {
         let Some(category) = group(txn) else {
             continue;
         };
@@ -182,6 +196,22 @@ mod tests {
         );
         assert_eq!(spending_in_root(&transactions, None), [category(None, 500)]);
         assert_eq!(spending_in_root(&transactions, Some("transport")), []);
+    }
+
+    #[test]
+    fn the_spending_in_a_category_is_its_debits_without_transfers() {
+        let transactions = transactions();
+        let ids = |category| -> Vec<&str> {
+            spending_in_category(&transactions, category)
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect()
+        };
+        // Not the refund "h".
+        assert_eq!(ids(Some("groceries")), ["a", "c"]);
+        // Not the salary "i" or the transfer "t".
+        assert_eq!(ids(None), ["f"]);
+        assert_eq!(ids(Some("home")), Vec::<&str>::new());
     }
 
     #[test]

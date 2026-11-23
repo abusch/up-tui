@@ -759,11 +759,11 @@ mod tests {
 
     use super::*;
     use crate::app::event::AppEvent;
-    use crate::app::insights::{spending_by_root, spending_in_root};
+    use crate::app::insights::{spending_by_root, spending_in_category, spending_in_root};
     use crate::app::{
         App,
         categories::Categories,
-        state::{AppMode, View, recent_since},
+        state::{AppMode, CategoryFilter, View, recent_since},
     };
     use crate::client::Client;
     use crossterm::event::{KeyCode, KeyEvent};
@@ -960,6 +960,7 @@ mod tests {
         let recent = app.state.tabs[0].store.recent().unwrap().to_vec();
         let roots = spending_by_root(&recent);
         let selected_root = |app: &App| app.state.insights.root.row(&roots).cloned();
+        let selected_id = |app: &App| app.state.selected_transaction().map(|t| t.id.clone());
         press(&mut app, &[KeyCode::Char('i'), KeyCode::Char('j')]);
         assert_eq!(selected_root(&app).as_ref(), roots.get(1));
 
@@ -973,7 +974,27 @@ mod tests {
         assert_eq!(subcategory, subcategories.get(1));
         assert_eq!(selected_root(&app).as_ref(), roots.get(1));
 
-        // Esc goes back to the root categories, where j/k move again.
+        // Enter shows the subcategory's transactions in the transaction list, which
+        // navigates through them only.
+        let category = subcategory.unwrap().category.clone();
+        let expected = spending_in_category(&recent, category.as_deref());
+        assert!(expected.len() > 1);
+        press(&mut app, &[KeyCode::Enter]);
+        assert_eq!(app.state.view, View::Transactions);
+        assert_eq!(selected_id(&app), Some(expected[0].id.clone()));
+        press(&mut app, &[KeyCode::Char('j')]);
+        assert_eq!(selected_id(&app), Some(expected[1].id.clone()));
+        press(&mut app, &[KeyCode::Char('G')]);
+        assert_eq!(selected_id(&app), expected.last().map(|t| t.id.clone()));
+        // The unfiltered list's selection hasn't moved.
+        assert_eq!(app.state.tabs[0].list.selected, 0);
+
+        // Esc goes back to the breakdown, and again to the root categories, where j/k
+        // move again.
+        press(&mut app, &[KeyCode::Esc]);
+        assert_eq!(app.state.view, View::Insights);
+        assert!(app.state.filter.is_none());
+        assert!(app.state.insights.breakdown);
         press(&mut app, &[KeyCode::Esc, KeyCode::Char('k')]);
         assert!(!app.state.insights.breakdown);
         assert_eq!(selected_root(&app).as_ref(), roots.first());
@@ -996,6 +1017,11 @@ mod tests {
             screens.push(render(&mut app, 120, 40));
             app.state.insights.breakdown = true;
             screens.push(render(&mut app, 120, 40));
+            app.state.view = View::Transactions;
+            app.state.filter = Some(CategoryFilter::new(Some("groceries".to_string())));
+            screens.push(render(&mut app, 120, 40));
+            app.state.filter = None;
+            app.state.insights.breakdown = false;
         }
         let all = screens.join("\n");
         for expected in [

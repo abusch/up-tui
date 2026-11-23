@@ -5,10 +5,10 @@ use jiff::{Timestamp, ToSpan, civil::Date, tz::TimeZone};
 use opaline::ThemeSelectorState;
 use opaline::names::tokens;
 use ratatui::style::Color;
-use ratatui::widgets::ListState;
 
 use crate::app::categories::Categories;
-use crate::app::insights::CategorySpending;
+use crate::app::insights::{CategorySpending, spending_in_category};
+use crate::app::list::ListSelection;
 use crate::app::store::{PageOutcome, TransactionStore};
 use crate::client::models::{Account, MoneyObject, PaginatedResponse, Transaction};
 
@@ -60,6 +60,34 @@ pub struct InsightsState {
     pub subcategory: CategorySelection,
     /// Whether the selected root category's breakdown is shown.
     pub breakdown: bool,
+}
+
+/// The transaction list's filter, opened from the Insights view: the spending in one
+/// category over the recent period (`spending_in_category`), the transactions that
+/// make up that category's row. It's kept when switching accounts, showing the same
+/// category's spending in the other account.
+#[derive(Debug, Default)]
+pub struct CategoryFilter {
+    /// The category id (`None`: transactions without a category).
+    pub category: Option<String>,
+    /// The selection in the filtered list.
+    pub list: ListSelection,
+}
+
+impl CategoryFilter {
+    pub fn new(category: Option<String>) -> Self {
+        CategoryFilter {
+            category,
+            list: ListSelection::default(),
+        }
+    }
+
+    /// The transactions in `tab` that the filter shows, newest first: none until its
+    /// recent transactions are loaded.
+    pub fn transactions<'a>(&self, tab: &'a TabState) -> Vec<&'a Transaction> {
+        let recent = tab.store.recent().unwrap_or_default();
+        spending_in_category(recent, self.category.as_deref())
+    }
 }
 
 /// The selected row of a list of categories' spending, by category id, so it stays on
@@ -118,10 +146,8 @@ pub struct TabState {
     pub account: Account,
     /// The account's transactions, and their loading.
     pub store: TransactionStore,
-    /// Index into the loaded transactions. Invariant: `selected < len` (or 0 if empty),
-    /// which the navigation handlers rely on.
-    pub selected: usize,
-    pub list_state: ListState,
+    /// The selection in the list of all its loaded transactions.
+    pub list: ListSelection,
 }
 
 impl TabState {
@@ -129,8 +155,7 @@ impl TabState {
         TabState {
             account,
             store: TransactionStore::default(),
-            selected: 0,
-            list_state: ListState::default(),
+            list: ListSelection::default(),
         }
     }
 
@@ -158,13 +183,13 @@ impl TabState {
         generation: u64,
         page: PaginatedResponse<Transaction>,
     ) -> Option<PageOutcome> {
-        let selected_id = self.txns().get(self.selected).map(|t| t.id.clone());
+        let selected_id = self.txns().get(self.list.selected).map(|t| t.id.clone());
         let outcome = self.store.page_loaded(generation, page)?;
         if outcome == PageOutcome::Replaced {
             let txns = self.txns();
-            self.selected = selected_id
+            self.list.selected = selected_id
                 .and_then(|id| txns.iter().position(|t| t.id == id))
-                .unwrap_or_else(|| self.selected.min(txns.len().saturating_sub(1)));
+                .unwrap_or_else(|| self.list.selected.min(txns.len().saturating_sub(1)));
         }
         Some(outcome)
     }
@@ -173,7 +198,7 @@ impl TabState {
     #[cfg(test)]
     pub fn set_transactions(&mut self, transactions: Vec<Transaction>) {
         self.store = TransactionStore::loaded(transactions, None);
-        self.selected = 0;
+        self.list.selected = 0;
     }
 
     /// The loaded transactions, or an empty slice if none are loaded yet.
@@ -181,83 +206,12 @@ impl TabState {
         self.store.transactions().unwrap_or_default()
     }
 
-    /// Index of the last loaded transaction (0 if there are none).
-    fn last_index(&self) -> usize {
-        self.txns().len().saturating_sub(1)
-    }
-
-    pub fn select_next(&mut self) {
-        self.selected = (self.selected + 1).min(self.last_index());
-    }
-
-    pub fn select_prev(&mut self) {
-        self.selected = self.selected.saturating_sub(1);
-    }
-
-    pub fn page_down(&mut self, page_size: usize) {
-        self.selected = (self.selected + page_size).min(self.last_index());
-    }
-
-    pub fn page_up(&mut self, page_size: usize) {
-        self.selected = self.selected.saturating_sub(page_size);
-    }
-
-    pub fn select_first(&mut self) {
-        self.selected = 0;
-    }
-
-    pub fn select_last(&mut self) {
-        self.selected = self.last_index();
-    }
-
-    /// Select the first (topmost) transaction of the day group above the current one.
-    /// Transactions are ordered newest first, so this is a more recent day.
-    pub fn select_prev_day(&mut self, tz: &TimeZone) {
-        let txns = self.txns();
-        let Some(current) = txns.get(self.selected) else {
-            return;
-        };
-        let current_date = local_date(current, tz);
-        let Some(prev) = txns[..self.selected]
-            .iter()
-            .rposition(|t| local_date(t, tz) != current_date)
-        else {
-            return; // already in the first day group
-        };
-        let prev_date = local_date(&txns[prev], tz);
-        self.selected = txns[..prev]
-            .iter()
-            .rposition(|t| local_date(t, tz) != prev_date)
-            .map_or(0, |i| i + 1);
-    }
-
-    /// Select the first (topmost) transaction of the day group below the current one.
-    /// Transactions are ordered newest first, so this is an older day.
-    pub fn select_next_day(&mut self, tz: &TimeZone) {
-        let txns = self.txns();
-        let Some(current) = txns.get(self.selected) else {
-            return;
-        };
-        let current_date = local_date(current, tz);
-        let next = txns[self.selected + 1..]
-            .iter()
-            .position(|t| local_date(t, tz) != current_date);
-        if let Some(offset) = next {
-            self.selected += 1 + offset;
-        }
-    }
-
     /// Whether the list wants more transactions: the selection is within `lookahead`
     /// rows of the end of the loaded ones. The store fetches the next page if there is
     /// one (see `TransactionStore::next_fetch`).
     pub fn wants_more(&self, lookahead: usize) -> bool {
-        self.selected + lookahead.max(1) >= self.txns().len()
+        self.list.selected + lookahead.max(1) >= self.txns().len()
     }
-}
-
-/// The calendar date of a transaction in the given time zone.
-fn local_date(txn: &Transaction, tz: &TimeZone) -> Date {
-    txn.created_at.to_zoned_datetime(tz.clone()).date()
 }
 
 pub struct AppState {
@@ -285,6 +239,9 @@ pub struct AppState {
     /// What the main area shows. It stays the same when switching accounts.
     pub view: View,
     pub insights: InsightsState,
+    /// The transaction list's filter, if it's filtered. Only set in
+    /// `View::Transactions`: leaving it (to go back to Insights) clears it.
+    pub filter: Option<CategoryFilter>,
     /// Number of transactions that fit in the list view; updated during rendering.
     pub page_size: usize,
     /// The message shown in the header bar, until it expires (see `App::show_message`).
@@ -314,6 +271,7 @@ impl AppState {
             show_sidebar: true,
             view: View::Transactions,
             insights: InsightsState::default(),
+            filter: None,
             page_size: 0,
             message: None,
         }
@@ -354,10 +312,32 @@ impl AppState {
         self.tabs.get(self.active_tab)
     }
 
-    /// The selected transaction in the active tab, if any.
+    /// The selected transaction in the transaction list, if any.
     pub fn selected_transaction(&self) -> Option<&Transaction> {
         let tab = self.current_tab()?;
-        tab.store.transactions()?.get(tab.selected)
+        match &self.filter {
+            Some(filter) => filter.list.transaction(&filter.transactions(tab)),
+            None => tab.store.transactions()?.get(tab.list.selected),
+        }
+    }
+
+    /// The transactions the transaction list shows in the active tab (the filter's, or
+    /// all the loaded ones), and the selection in them, kept within the list.
+    pub fn list_mut(&mut self) -> Option<(Vec<&Transaction>, &mut ListSelection)> {
+        let tab = self.tabs.get_mut(self.active_tab)?;
+        let (txns, list) = match &mut self.filter {
+            Some(filter) => (filter.transactions(tab), &mut filter.list),
+            None => (
+                tab.store
+                    .transactions()
+                    .unwrap_or_default()
+                    .iter()
+                    .collect(),
+                &mut tab.list,
+            ),
+        };
+        list.clamp(txns.len());
+        Some((txns, list))
     }
 
     pub fn current_tab_mut(&mut self) -> Option<&mut TabState> {
@@ -366,17 +346,26 @@ impl AppState {
 
     pub fn next_tab(&mut self) {
         if !self.tabs.is_empty() {
-            self.active_tab = (self.active_tab + 1) % self.tabs.len();
+            self.select_tab((self.active_tab + 1) % self.tabs.len());
         }
     }
 
     pub fn prev_tab(&mut self) {
         if !self.tabs.is_empty() {
-            self.active_tab = if self.active_tab == 0 {
+            self.select_tab(if self.active_tab == 0 {
                 self.tabs.len() - 1
             } else {
                 self.active_tab - 1
-            };
+            });
+        }
+    }
+
+    /// Make `index` the active tab. A filtered list then shows the other account's
+    /// transactions, from the top.
+    fn select_tab(&mut self, index: usize) {
+        self.active_tab = index;
+        if let Some(filter) = &mut self.filter {
+            filter.list = ListSelection::default();
         }
     }
 
@@ -457,71 +446,6 @@ pub(crate) mod tests {
         tab
     }
 
-    fn selected_after(start: usize, action: impl FnOnce(&mut TabState)) -> usize {
-        let mut tab = tab();
-        tab.selected = start;
-        action(&mut tab);
-        tab.selected
-    }
-
-    #[test]
-    fn next_and_prev_stop_at_the_ends() {
-        assert_eq!(selected_after(0, TabState::select_next), 1);
-        assert_eq!(selected_after(5, TabState::select_next), 5);
-        assert_eq!(selected_after(1, TabState::select_prev), 0);
-        assert_eq!(selected_after(0, TabState::select_prev), 0);
-    }
-
-    #[test]
-    fn paging_clamps_to_the_list() {
-        assert_eq!(selected_after(1, |t| t.page_down(3)), 4);
-        assert_eq!(selected_after(4, |t| t.page_down(3)), 5);
-        assert_eq!(selected_after(4, |t| t.page_up(3)), 1);
-        assert_eq!(selected_after(1, |t| t.page_up(3)), 0);
-    }
-
-    #[test]
-    fn first_and_last() {
-        assert_eq!(selected_after(3, TabState::select_first), 0);
-        assert_eq!(selected_after(3, TabState::select_last), 5);
-    }
-
-    #[test]
-    fn navigation_on_an_empty_or_unloaded_tab_stays_at_zero() {
-        let mut tab = TabState::new(account("a", 0));
-        tab.select_next();
-        tab.select_last();
-        tab.page_down(10);
-        tab.select_next_day(&TimeZone::UTC);
-        tab.select_prev_day(&TimeZone::UTC);
-        assert_eq!(tab.selected, 0);
-    }
-
-    #[test]
-    fn next_day_jumps_to_the_top_of_the_day_below() {
-        let utc = TimeZone::UTC;
-        assert_eq!(selected_after(0, |t| t.select_next_day(&utc)), 2);
-        assert_eq!(selected_after(3, |t| t.select_next_day(&utc)), 5);
-        assert_eq!(selected_after(5, |t| t.select_next_day(&utc)), 5);
-    }
-
-    #[test]
-    fn prev_day_jumps_to_the_top_of_the_day_above() {
-        let utc = TimeZone::UTC;
-        assert_eq!(selected_after(5, |t| t.select_prev_day(&utc)), 2);
-        assert_eq!(selected_after(3, |t| t.select_prev_day(&utc)), 0);
-        assert_eq!(selected_after(1, |t| t.select_prev_day(&utc)), 1);
-    }
-
-    #[test]
-    fn day_boundaries_use_the_given_time_zone() {
-        // In UTC+10, t1 (Nov 20 09:00Z) and t2 (Nov 19 22:00Z) are both on Nov 20
-        // local time, so the next day starts at t3 rather than t2.
-        let tz = TimeZone::fixed(jiff::tz::offset(10));
-        assert_eq!(selected_after(1, |t| t.select_next_day(&TimeZone::UTC)), 2);
-        assert_eq!(selected_after(1, |t| t.select_next_day(&tz)), 3);
-    }
-
     /// Refresh the tab with a single page of these transactions.
     fn refresh_with(tab: &mut TabState, transactions: Vec<Transaction>) {
         let fetch = tab.store.refresh("2026-11-01T00:00:00Z".parse().unwrap());
@@ -538,7 +462,7 @@ pub(crate) mod tests {
     #[test]
     fn a_refresh_keeps_the_selected_transaction() {
         let mut tab = tab();
-        tab.selected = 2; // t2
+        tab.list.selected = 2; // t2
         refresh_with(
             &mut tab,
             vec![
@@ -548,25 +472,25 @@ pub(crate) mod tests {
                 txn("t2", "2026-11-19T22:00:00Z"),
             ],
         );
-        assert_eq!(tab.selected, 3);
+        assert_eq!(tab.list.selected, 3);
     }
 
     #[test]
     fn a_refresh_clamps_the_selection_when_it_is_gone() {
         let mut tab = tab();
-        tab.selected = 5; // t5
+        tab.list.selected = 5; // t5
         refresh_with(&mut tab, vec![txn("t0", "2026-11-20T18:00:00Z")]);
-        assert_eq!(tab.selected, 0);
+        assert_eq!(tab.list.selected, 0);
         refresh_with(&mut tab, Vec::new());
-        assert_eq!(tab.selected, 0);
+        assert_eq!(tab.list.selected, 0);
     }
 
     #[test]
     fn wants_more_near_the_end_only() {
         let mut tab = tab();
-        tab.selected = 0;
+        tab.list.selected = 0;
         assert!(!tab.wants_more(3));
-        tab.selected = 3;
+        tab.list.selected = 3;
         assert!(tab.wants_more(3));
         assert!(TabState::new(account("a", 0)).wants_more(3));
     }
@@ -687,7 +611,7 @@ pub(crate) mod tests {
         let mut s = state();
         s.set_accounts(vec![account("a", 100), account("b", 200)]);
         s.tabs[1].set_transactions(vec![txn("t", "2026-11-20T18:00:00Z")]);
-        s.tabs[1].selected = 7;
+        s.tabs[1].list.selected = 7;
         s.active_tab = 1;
 
         // "b" moves to the front, gets a new balance, and "c" is new.
@@ -700,10 +624,10 @@ pub(crate) mod tests {
         let ids: Vec<_> = s.tabs.iter().map(|t| t.account.id.as_str()).collect();
         assert_eq!(ids, ["b", "c", "a"]);
         assert_eq!(s.active_tab, 0, "active tab should follow account b");
-        assert_eq!(s.tabs[0].selected, 7);
+        assert_eq!(s.tabs[0].list.selected, 7);
         assert_eq!(s.tabs[0].txns().len(), 1);
         assert_eq!(s.tabs[0].account.balance.value_in_base_units, 999);
-        assert_eq!(s.tabs[1].selected, 0);
+        assert_eq!(s.tabs[1].list.selected, 0);
     }
 
     #[test]

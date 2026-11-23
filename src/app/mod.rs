@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 
 use crate::app::categories::Categories;
 use crate::app::insights::{spending_by_root, spending_in_root};
-use crate::app::state::{AppMode, Message, MessageKind, TabState, View, recent_since};
+use crate::app::state::{AppMode, CategoryFilter, Message, MessageKind, View, recent_since};
 use crate::app::store::{Fetch, LoadKind, PageOutcome};
 use crate::backend::AppTerminal;
 use crate::{
@@ -23,6 +23,7 @@ use crate::{
 pub mod categories;
 pub mod event;
 pub mod insights;
+pub mod list;
 pub mod state;
 pub mod store;
 
@@ -196,6 +197,13 @@ impl App {
                     View::Transactions => View::Insights,
                     View::Insights => View::Transactions,
                 };
+                // The filter belongs to the transaction list it was opened in.
+                self.state.filter = None;
+            }
+            // Back from the filtered list to the Insights breakdown it was opened from.
+            KeyCode::Esc | KeyCode::Backspace if self.state.filter.is_some() => {
+                self.state.filter = None;
+                self.state.view = View::Insights;
             }
             KeyCode::Char('a') => {
                 self.state.show_sidebar = !self.state.show_sidebar;
@@ -253,6 +261,13 @@ impl App {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => selection.select_next(&rows),
             KeyCode::Char('k') | KeyCode::Up => selection.select_prev(&rows),
+            // In the breakdown: show the selected subcategory's transactions.
+            KeyCode::Enter if insights.breakdown => {
+                if let Some(row) = selection.row(&rows) {
+                    self.state.filter = Some(CategoryFilter::new(row.category.clone()));
+                    self.state.view = View::Transactions;
+                }
+            }
             KeyCode::Enter if !rows.is_empty() => insights.breakdown = true,
             KeyCode::Esc | KeyCode::Backspace => insights.breakdown = false,
             _ => {}
@@ -275,37 +290,28 @@ impl App {
         self.load_tab(self.state.active_tab);
     }
 
-    /// Keys that move the selection in the active tab's transaction list.
+    /// Keys that move the selection in the transaction list (the active tab's, or the
+    /// filtered one).
     fn handle_navigation_key(&mut self, key: KeyEvent) {
+        let page_size = self.state.page_size;
+        let tz = self.state.tz.clone();
+        let Some((txns, list)) = self.state.list_mut() else {
+            return;
+        };
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => self.navigate(TabState::select_next),
-            KeyCode::Char('k') | KeyCode::Up => self.navigate(TabState::select_prev),
+            KeyCode::Char('j') | KeyCode::Down => list.select_next(&txns),
+            KeyCode::Char('k') | KeyCode::Up => list.select_prev(),
             KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let page_size = self.state.page_size;
-                self.navigate(|tab| tab.page_down(page_size));
+                list.page_down(&txns, page_size);
             }
             KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let page_size = self.state.page_size;
-                self.navigate(|tab| tab.page_up(page_size));
+                list.page_up(page_size);
             }
-            KeyCode::Char('g') => self.navigate(TabState::select_first),
-            KeyCode::Char('G') => self.navigate(TabState::select_last),
-            KeyCode::Char('[') => {
-                let tz = self.state.tz.clone();
-                self.navigate(|tab| tab.select_prev_day(&tz));
-            }
-            KeyCode::Char(']') => {
-                let tz = self.state.tz.clone();
-                self.navigate(|tab| tab.select_next_day(&tz));
-            }
+            KeyCode::Char('g') => list.select_first(),
+            KeyCode::Char('G') => list.select_last(&txns),
+            KeyCode::Char('[') => list.select_prev_day(&txns, &tz),
+            KeyCode::Char(']') => list.select_next_day(&txns, &tz),
             _ => {}
-        }
-    }
-
-    /// Apply a navigation action to the active tab, if there is one.
-    fn navigate(&mut self, action: impl FnOnce(&mut TabState)) {
-        if let Some(tab) = self.state.current_tab_mut() {
-            action(tab);
         }
     }
 

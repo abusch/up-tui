@@ -18,6 +18,18 @@ const NORMAL_HINTS: &[(&str, &str)] = &[
     ("q", "quit"),
 ];
 
+/// Key hints in a filtered transaction list, opened from the Insights view.
+const FILTERED_HINTS: &[(&str, &str)] = &[
+    ("Esc", "back to insights"),
+    ("h/l", "account"),
+    ("j/k", "move"),
+    ("[/]", "day"),
+    ("Enter", "open"),
+    ("o", "detail"),
+    ("r", "refresh"),
+    ("q", "quit"),
+];
+
 /// Key hints in the Insights view, listing spending by root category.
 const INSIGHTS_HINTS: &[(&str, &str)] = &[
     ("h/l", "account"),
@@ -34,6 +46,7 @@ const INSIGHTS_HINTS: &[(&str, &str)] = &[
 const BREAKDOWN_HINTS: &[(&str, &str)] = &[
     ("h/l", "account"),
     ("j/k", "subcategory"),
+    ("Enter", "transactions"),
     ("Esc", "back"),
     ("i", "transactions"),
     ("a", "sidebar"),
@@ -56,6 +69,7 @@ pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
     let hints = match state.mode {
         AppMode::Detail => DETAIL_HINTS,
         AppMode::Normal | AppMode::Theme(_) => match state.view {
+            View::Transactions if state.filter.is_some() => FILTERED_HINTS,
             View::Transactions => NORMAL_HINTS,
             View::Insights if state.insights.breakdown => BREAKDOWN_HINTS,
             View::Insights => INSIGHTS_HINTS,

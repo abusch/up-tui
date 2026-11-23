@@ -8,7 +8,6 @@ pub mod transaction_list;
 
 use opaline::ThemeSelector;
 use opaline::names::tokens;
-use ratatui::layout::Spacing;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Clear, Widget};
 use unicode_width::UnicodeWidthStr;
@@ -69,15 +68,25 @@ impl Widget for &mut App {
             Layout::vertical([Constraint::Length(header_height), Constraint::Fill(1)]).areas(main);
         account_header::draw_account_header(buf, header, &self.state);
 
+        // A filtered list has a bar above it (and the detail pane), saying what it shows.
+        let main = if self.state.view == View::Transactions && self.state.filter.is_some() {
+            let [bar, rest] =
+                Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(main);
+            transaction_list::draw_filter_bar(buf, bar, &self.state);
+            rest
+        } else {
+            main
+        };
+
         if self.state.view == View::Insights {
             insights::draw_insights(buf, main, &self.state);
         } else if self.state.show_detail {
             // Split the rest horizontally: transaction list (left) + detail pane (right).
             // The pane takes a third of the screen's width, not of what the sidebar
-            // leaves, so that it stays wide enough to read; the list gets the rest.
+            // leaves, so that it stays wide enough to read; the list gets the rest,
+            // including its right padding, which separates it from the pane's border.
             let [list, detail] =
                 Layout::horizontal([Constraint::Fill(1), Constraint::Length(area.width / 3)])
-                    .spacing(Spacing::Overlap(1))
                     .areas(main);
 
             transaction_list::draw_transaction_list(buf, list, &mut self.state);
