@@ -1,3 +1,4 @@
+use etcetera::{BaseStrategy, base_strategy::Xdg};
 use rootcause::{Result, bail, prelude::*};
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -8,32 +9,14 @@ pub struct Config {
     pub theme: Option<String>,
 }
 
-/// The config file location: `$XDG_CONFIG_HOME/up-tui/config.toml` if set, otherwise
-/// `~/.config/up-tui/config.toml`, on every platform. (`dirs::config_dir()` is not used
-/// because it returns `~/Library/Application Support` on macOS, contradicting the docs.)
+/// The config file location: `$XDG_CONFIG_HOME/up-tui/config.toml` if set (and absolute),
+/// otherwise `~/.config/up-tui/config.toml`, on every platform. The XDG strategy is used
+/// directly rather than `choose_base_strategy()`, which would pick `AppData` on Windows.
 pub fn config_path() -> Result<PathBuf> {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| dirs::home_dir().map(|home| home.join(".config")));
-    let Some(base) = base else {
-        bail!(
-            "Could not determine the config directory: neither $XDG_CONFIG_HOME nor the home directory is set"
-        );
+    let Ok(xdg) = Xdg::new() else {
+        bail!("Could not determine the config directory: the home directory is not set");
     };
-    let path = base.join("up-tui").join("config.toml");
-
-    // Backwards compatibility: earlier versions read from the platform config dir
-    // (`~/Library/Application Support` on macOS). Keep using it if that's where the
-    // file is and the new location doesn't exist.
-    if !path.exists()
-        && let Some(legacy) = dirs::config_dir().map(|d| d.join("up-tui").join("config.toml"))
-        && legacy.exists()
-    {
-        return Ok(legacy);
-    }
-
-    Ok(path)
+    Ok(xdg.config_dir().join("up-tui").join("config.toml"))
 }
 
 pub fn load_config() -> Result<Config> {

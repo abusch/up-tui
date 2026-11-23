@@ -39,8 +39,6 @@ Or build from source with `cargo run`.
    echo 'api_token = "up:yeah:your-token-here"' > ~/.config/up-tui/config.toml
    ```
 
-   > Earlier versions read the config from `~/Library/Application Support/up-tui/config.toml` on macOS. That file is still used if `~/.config/up-tui/config.toml` doesn't exist.
-
 3. Optionally set a theme:
 
    ```toml

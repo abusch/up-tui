@@ -35,7 +35,7 @@ src/
 
 ## Configuration
 
-Read from `$XDG_CONFIG_HOME/up-tui/config.toml` (if set and absolute), else `~/.config/up-tui/config.toml`, on every platform. `dirs::config_dir()` is deliberately not used, because on macOS it is `~/Library/Application Support`; a file there is still read as a legacy fallback. The config (`api_token`, and an optional opaline `theme` id) is validated before the TUI starts, and errors are returned from `main()`.
+Read from `$XDG_CONFIG_HOME/up-tui/config.toml` (if set and absolute), else `~/.config/up-tui/config.toml`, on every platform, using `etcetera`'s `Xdg` strategy directly (not `choose_base_strategy()`, which picks `AppData` on Windows, nor the native strategy, which picks `~/Library/Application Support` on macOS). The config (`api_token`, and an optional opaline `theme` id) is validated before the TUI starts, and errors are returned from `main()`.
 
 ## Architecture
 
