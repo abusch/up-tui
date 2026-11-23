@@ -3,6 +3,7 @@ pub mod contrast;
 pub mod header_bar;
 pub mod help;
 pub mod insights;
+pub mod qr_code;
 pub mod sidebar;
 pub mod status_bar;
 pub mod transaction_detail;
@@ -73,8 +74,8 @@ impl Widget for &mut App {
         ])
         .areas(area);
         header_bar::draw_header_bar(buf, header_bar, &self.state);
-        // The help popup goes between the header and status bars, leaving the status
-        // bar's hints (on how to scroll it) visible.
+        // The help and QR code popups go between the header and status bars, leaving
+        // the status bar's hints (on how to scroll or close them) visible.
         let help_area = main;
 
         // Account sidebar on the left, if shown.
@@ -127,6 +128,9 @@ impl Widget for &mut App {
 
         if let AppMode::Help { ref mut scroll } = self.state.mode {
             help::draw_help(buf, help_area, &self.state.theme, scroll);
+        }
+        if let AppMode::QrCode(ref popup) = self.state.mode {
+            qr_code::draw_qr_code(buf, help_area, &self.state.theme, popup);
         }
         if let AppMode::Theme(ref mut state) = self.state.mode {
             let centered_area = area.centered(Constraint::Ratio(2, 3), Constraint::Ratio(3, 4));

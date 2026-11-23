@@ -60,6 +60,7 @@ All errors are `rootcause` reports (`rootcause::Result`); there are no custom er
 - `state.theme` must always be opaline's global theme: the `ThemeSelector` picker draws with, and previews by changing, the global theme. Never set `state.theme` without also calling `opaline::set_theme`.
 - No hardcoded colours, and nothing drawn by a third-party widget with its own colours: use semantic tokens (`opaline::names::tokens`) via `theme.color(token)`. `theme.line()`/`span()`/`style()` take *style* names (`opaline::names::styles`), not tokens, and silently return an unstyled result for an unknown name.
 - Dim and muted text (`TEXT_DIM`, `TEXT_MUTED`) goes through `contrast::readable(theme, token, bg)`, with the background it's drawn on, not `theme.color()`. Themes copy editor palettes whose dim colours are barely visible even on the base background, and all but disappear on our lighter ones (Nord's `TEXT_DIM` on `BG_SELECTION`: 1.2:1). For text on a selected row, pass `BG_SELECTION`. The alternative crates (tui-nuances, ratatui-themes) have the same problem.
+- The one exception is the QR code popup (`src/ui/qr_code.rs`), which is always black on white, so phones can scan it in any theme.
 - Look at how existing UI uses tokens before picking one for something new (e.g. `BG_PANEL` for side panes, `BG_SELECTION` for selections, `TEXT_DIM` for secondary text, `TEXT_PRIMARY`/`SUCCESS` for debits/credits).
 - Root categories get the status tokens (`ROOT_COLORS` in `src/app/categories.rs`) because those are clearly different hues in every builtin theme (a test checks this); accent tokens repeat in some themes.
 
@@ -74,6 +75,8 @@ Bindings are listed in the README. Key handling is in `App::handle_key`, dispatc
 ## Dependencies
 
 When adding or updating dependencies in `Cargo.toml`, always specify the full version including the patch number (e.g. `"1.0.102"`, not `"1"` or `"1.0"`).
+
+`tui-qrcode` 0.2.7 has `color-eyre` as a regular dependency (about 15 extra crates to build, none used at runtime). It's fixed upstream but unreleased: upgrade to the first release after 0.2.7, along with `qrcode` to the version it uses (the two must match, as the widget takes a `qrcode::QrCode`). Don't use a git dependency meanwhile: `cargo publish` rejects them.
 
 ## Code Quality
 

@@ -67,6 +67,7 @@ The status bar shows the most useful keys for what's on screen; press `?` to see
 | `g` / `G`              | Jump to top / bottom                     |
 | `[` / `]`              | Jump to the day above / below            |
 | `Enter`                | Toggle the transaction detail pane       |
+| `o`                    | Show a QR code to open it in Up's app    |
 | `a`                    | Toggle the account sidebar               |
 | `i`                    | Switch between transactions and Insights |
 | `p`                    | Switch between this month and 30 days    |
@@ -76,6 +77,8 @@ The status bar shows the most useful keys for what's on screen; press `?` to see
 | `q` / `Ctrl+C`         | Quit                                     |
 
 In the Insights view, `j` / `k` select a category, `Enter` shows its breakdown by subcategory (where `j` / `k` select a subcategory), and `Esc` goes back to the list of categories. `Enter` on a subcategory shows its transactions over the period in the transaction list, with a bar above it saying what it's filtered by; `Esc` goes back to the breakdown.
+
+`o` shows a QR code of the selected transaction's link into Up's app: scan it with your phone's camera to open the transaction there (to add a note or a receipt, say). `Esc` closes it.
 
 If the window is too narrow for the transaction list and the detail pane side by side, the pane is shown in place of the list (the navigation keys still move through the transactions).
 

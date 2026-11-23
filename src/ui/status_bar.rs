@@ -50,6 +50,9 @@ const BREAKDOWN_HINTS: &[(&str, &str)] = &[
 /// Key hints on the help screen.
 const HELP_HINTS: &[(&str, &str)] = &[("j/k", "scroll"), ("Esc", "close"), ("Ctrl+C", "quit")];
 
+/// Key hints in the QR code popup.
+const QR_CODE_HINTS: &[(&str, &str)] = &[("Esc", "close"), ("Ctrl+C", "quit")];
+
 pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
     let info: Style = state.theme.color(tokens::INFO).into();
     let fg = Style::default().fg(readable(
@@ -60,6 +63,7 @@ pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
 
     let hints = match state.view {
         _ if matches!(state.mode, AppMode::Help { .. }) => HELP_HINTS,
+        _ if matches!(state.mode, AppMode::QrCode(_)) => QR_CODE_HINTS,
         View::Transactions if state.filter.is_some() => FILTERED_HINTS,
         View::Transactions => NORMAL_HINTS,
         View::Insights if state.insights.breakdown => BREAKDOWN_HINTS,

@@ -35,6 +35,7 @@ const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("g / G", "Jump to the top / bottom"),
             ("[ / ]", "Jump to the day above / below"),
             ("Enter", "Toggle the detail pane"),
+            ("o", "Show a QR code that opens the transaction in Up's app"),
             ("Esc", "Back to Insights, from a category's transactions"),
         ],
     ),

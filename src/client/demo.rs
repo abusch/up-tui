@@ -588,8 +588,10 @@ impl Generator {
     /// A settled transaction with only the basics filled in.
     fn txn(&mut self, description: &str, cents: i64, at: Timestamp) -> Transaction {
         self.next_id += 1;
+        let id = format!("demo-{:05}", self.next_id);
         Transaction {
-            id: format!("demo-{:05}", self.next_id),
+            deep_link_url: Some(format!("up://transaction/{id}")),
+            id,
             status: TransactionStatus::Settled,
             description: description.to_string(),
             raw_text: None,
@@ -1060,6 +1062,26 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn o_shows_the_selected_transactions_deep_link_as_a_qr_code() {
+        let mut app = demo_app(&now());
+        press(&mut app, &[KeyCode::Char('j'), KeyCode::Char('o')]);
+        let AppMode::QrCode(popup) = &app.state.mode else {
+            panic!("the QR code isn't shown");
+        };
+        let txn = app.state.selected_transaction().unwrap();
+        assert_eq!(popup.description, txn.description);
+        let url = txn.deep_link_url.as_deref().unwrap();
+        let expected = qrcode::QrCode::new(url).unwrap();
+        assert_eq!(popup.qr_code.to_colors(), expected.to_colors());
+        // j doesn't move the list behind it; Esc closes it without quitting.
+        press(&mut app, &[KeyCode::Char('j')]);
+        assert_eq!(app.state.tabs[0].list.selected, 1);
+        press(&mut app, &[KeyCode::Esc]);
+        assert!(matches!(app.state.mode, AppMode::Normal));
+        assert!(!app.state.should_quit);
+    }
+
     #[test]
     fn the_app_shows_the_demo_data_in_every_view() {
         let mut app = demo_app(&now());
@@ -1096,11 +1118,19 @@ mod tests {
         screens.push(render(&mut app, 120, 40));
         app.state.mode = AppMode::Help { scroll: u16::MAX };
         screens.push(render(&mut app, 80, 24));
+        // The QR code, and in a terminal too small for it.
+        app.handle_event(AppEvent::Key(KeyEvent::from(KeyCode::Esc)));
+        app.handle_event(AppEvent::Key(KeyEvent::from(KeyCode::Char('o'))));
+        assert!(matches!(app.state.mode, AppMode::QrCode(_)));
+        screens.push(render(&mut app, 120, 40));
+        screens.push(render(&mut app, 80, 20));
         app.state.mode = AppMode::Normal;
         let all = screens.join("\n");
         for expected in [
             "Show or hide this help",
             "Close without changing the theme",
+            "Scan to open it in Up",
+            "to show the QR code",
             "Spending",
             "2Up Spending",
             "Holiday",

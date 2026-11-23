@@ -239,6 +239,11 @@ pub struct TransactionAttributes {
     pub transaction_type: Option<String>,
     pub note: Option<Note>,
     pub performing_customer: Option<Customer>,
+    /// A link that opens the transaction in Up's app. It's documented at
+    /// <https://developer.up.com.au/#transactions> but missing from Up's OpenAPI spec,
+    /// so it's optional, to be safe.
+    #[serde(rename = "deepLinkURL", default)]
+    pub deep_link_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -376,6 +381,8 @@ pub struct Transaction {
     pub transaction_type: Option<String>,
     pub note: Option<Note>,
     pub performing_customer: Option<Customer>,
+    /// A link that opens the transaction in Up's app, if the API gives one.
+    pub deep_link_url: Option<String>,
     pub category: Option<String>,
     pub parent_category: Option<String>,
     pub tags: Vec<String>,
@@ -423,6 +430,7 @@ impl From<Resource<TransactionAttributes, TransactionRelationships>> for Transac
             transaction_type: r.attributes.transaction_type,
             note: r.attributes.note,
             performing_customer: r.attributes.performing_customer,
+            deep_link_url: r.attributes.deep_link_url,
             category,
             parent_category,
             tags,

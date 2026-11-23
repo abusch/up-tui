@@ -192,6 +192,16 @@ pub enum AppMode {
     Help {
         scroll: u16,
     },
+    /// A QR code of the selected transaction's deep link, to open it in Up's app by
+    /// scanning it with a phone.
+    QrCode(QrCodePopup),
+}
+
+/// What the QR code popup shows.
+pub struct QrCodePopup {
+    /// The transaction's description, for the popup's title.
+    pub description: String,
+    pub qr_code: qrcode::QrCode,
 }
 
 /// A tab: one account, its transactions, and the state of its transaction list.
@@ -486,6 +496,7 @@ pub(crate) mod tests {
             transaction_type: None,
             note: None,
             performing_customer: None,
+            deep_link_url: None,
             category: None,
             parent_category: None,
             tags: Vec::new(),

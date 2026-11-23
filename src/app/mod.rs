@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 
 use crate::app::categories::Categories;
 use crate::app::insights::{spending_by_root, spending_in_root};
-use crate::app::state::{AppMode, CategoryFilter, Message, MessageKind, View};
+use crate::app::state::{AppMode, CategoryFilter, Message, MessageKind, QrCodePopup, View};
 use crate::app::store::{Fetch, LoadKind, PageOutcome};
 use crate::backend::AppTerminal;
 use crate::{
@@ -193,6 +193,36 @@ impl App {
                 KeyCode::Char('k') | KeyCode::Up => *scroll = scroll.saturating_sub(1),
                 _ => {}
             },
+            AppMode::QrCode(_) => match key.code {
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.state.should_quit = true;
+                }
+                KeyCode::Char('o') | KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter => {
+                    self.state.mode = AppMode::Normal;
+                }
+                _ => {}
+            },
+        }
+    }
+
+    /// Show the selected transaction's deep link as a QR code, to open it in Up's app.
+    fn show_qr_code(&mut self) {
+        let Some(txn) = self.state.selected_transaction() else {
+            return;
+        };
+        let description = txn.description.clone();
+        let Some(url) = txn.deep_link_url.as_deref() else {
+            self.error("This transaction has no link to Up's app");
+            return;
+        };
+        match qrcode::QrCode::new(url) {
+            Ok(qr_code) => {
+                self.state.mode = AppMode::QrCode(QrCodePopup {
+                    description,
+                    qr_code,
+                });
+            }
+            Err(e) => self.error(format!("Couldn't make a QR code: {e}")),
         }
     }
 
@@ -251,6 +281,7 @@ impl App {
             KeyCode::Enter => {
                 self.state.show_detail = !self.state.show_detail;
             }
+            KeyCode::Char('o') => self.show_qr_code(),
             _ => self.handle_navigation_key(key),
         }
 
