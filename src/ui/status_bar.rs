@@ -12,7 +12,7 @@ const NORMAL_HINTS: &[(&str, &str)] = &[
     ("Enter", "open"),
     ("o", "detail"),
     ("i", "insights"),
-    ("s", "sidebar"),
+    ("a", "sidebar"),
     ("r", "refresh"),
     ("t", "theme"),
     ("q", "quit"),
@@ -22,7 +22,7 @@ const NORMAL_HINTS: &[(&str, &str)] = &[
 const INSIGHTS_HINTS: &[(&str, &str)] = &[
     ("h/l", "account"),
     ("i", "transactions"),
-    ("s", "sidebar"),
+    ("a", "sidebar"),
     ("r", "refresh"),
     ("t", "theme"),
     ("q", "quit"),

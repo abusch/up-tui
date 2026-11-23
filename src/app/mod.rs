@@ -216,7 +216,7 @@ impl App {
                     View::Insights => View::Transactions,
                 };
             }
-            KeyCode::Char('s') => {
+            KeyCode::Char('a') => {
                 self.state.show_sidebar = !self.state.show_sidebar;
             }
             KeyCode::Char('r') => {

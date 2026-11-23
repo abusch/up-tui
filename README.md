@@ -68,7 +68,7 @@ To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`).
 | `[` / `]`              | Jump to the day above / below            |
 | `Enter`                | Show the transaction's details in a popup |
 | `o`                    | Toggle the transaction detail pane       |
-| `s`                    | Toggle the account sidebar               |
+| `a`                    | Toggle the account sidebar               |
 | `i`                    | Switch between transactions and Insights |
 | `r`                    | Refresh accounts and transactions        |
 | `t`                    | Open the theme picker                    |

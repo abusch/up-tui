@@ -175,7 +175,7 @@ When adding something the UI shows, add it to the demo data too (in `Generator::
 | `[` / `]`           | Normal       | Jump to the start of the day group above / below (the list is newest first) |
 | `Enter`             | Normal       | Open the detail popup (if a transaction is selected) |
 | `o`                 | Normal       | Toggle the detail pane                      |
-| `s`                 | Normal       | Toggle the account sidebar                  |
+| `a`                 | Normal       | Toggle the account sidebar                  |
 | `i`                 | Normal       | Switch between the transaction list and the Insights view |
 | `Esc` / `Enter` / `q` | Detail popup | Close the popup                           |
 | `Ctrl+C`            | Detail popup | Quit                                        |
