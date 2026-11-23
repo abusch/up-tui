@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.4](https://github.com/abusch/up-tui/compare/v0.2.3...v0.2.4) - 2026-11-23
+## [0.3.0](https://github.com/abusch/up-tui/compare/v0.2.3...v0.3.0) - 2026-11-23
 
 ### Added
 
