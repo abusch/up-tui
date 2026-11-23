@@ -6,6 +6,7 @@ pub mod insights;
 pub mod qr_code;
 pub mod sidebar;
 pub mod status_bar;
+pub mod text;
 pub mod transaction_detail;
 pub mod transaction_list;
 
@@ -13,28 +14,9 @@ use opaline::ThemeSelector;
 use opaline::names::tokens;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Clear, Widget};
-use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 use crate::app::state::{AppMode, View};
-
-/// `left` with `right` right-aligned on the same line of `width` columns, or `right`
-/// on a line of its own (left-aligned) if they don't both fit with a space between.
-fn right_aligned(
-    mut left: Vec<Span<'static>>,
-    right: Vec<Span<'static>>,
-    width: usize,
-) -> Vec<Line<'static>> {
-    let span_width = |spans: &[Span]| -> usize { spans.iter().map(|s| s.content.width()).sum() };
-    let (left_width, right_width) = (span_width(&left), span_width(&right));
-    if left_width + 1 + right_width <= width {
-        left.push(Span::raw(" ".repeat(width - left_width - right_width)));
-        left.extend(right);
-        vec![Line::from(left)]
-    } else {
-        vec![Line::from(left), Line::from(right)]
-    }
-}
 
 /// Minimum width of the detail pane, including its border and padding.
 const DETAIL_MIN_WIDTH: u16 = 40;
@@ -76,7 +58,7 @@ impl Widget for &mut App {
         header_bar::draw_header_bar(buf, header_bar, &self.state);
         // The help and QR code popups go between the header and status bars, leaving
         // the status bar's hints (on how to scroll or close them) visible.
-        let help_area = main;
+        let popup_area = main;
 
         // Account sidebar on the left, if shown.
         let main = if self.state.show_sidebar {
@@ -127,10 +109,10 @@ impl Widget for &mut App {
         status_bar::draw_status_bar(buf, status, &self.state);
 
         if let AppMode::Help { ref mut scroll } = self.state.mode {
-            help::draw_help(buf, help_area, &self.state.theme, scroll);
+            help::draw_help(buf, popup_area, &self.state.theme, scroll);
         }
         if let AppMode::QrCode(ref popup) = self.state.mode {
-            qr_code::draw_qr_code(buf, help_area, &self.state.theme, popup);
+            qr_code::draw_qr_code(buf, popup_area, area, &self.state.theme, popup);
         }
         if let AppMode::Theme(ref mut state) = self.state.mode {
             let centered_area = area.centered(Constraint::Ratio(2, 3), Constraint::Ratio(3, 4));

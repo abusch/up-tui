@@ -20,8 +20,9 @@ use jiff::{
 use rootcause::{Result, bail};
 
 use super::models::{
-    Account, CardPurchaseMethod, Cashback, Category, Customer, HoldInfo, MoneyObject, Note,
-    PaginatedResponse, PaginationOptions, RoundUp, Transaction, TransactionStatus,
+    Account, AccountType, CardPurchaseMethod, Cashback, Category, Customer, HoldInfo, MoneyObject,
+    Note, OwnershipType, PaginatedResponse, PaginationOptions, RoundUp, Transaction,
+    TransactionStatus,
 };
 
 /// How many days back the transactions go (including today).
@@ -39,8 +40,8 @@ const HOME_LOAN: &str = "demo-home-loan";
 struct AccountSpec {
     id: &'static str,
     name: &'static str,
-    account_type: &'static str,
-    ownership_type: &'static str,
+    account_type: AccountType,
+    ownership_type: OwnershipType,
     /// The balance before the first generated transaction, in cents.
     opening_balance: i64,
 }
@@ -49,37 +50,37 @@ const ACCOUNTS: &[AccountSpec] = &[
     AccountSpec {
         id: SPENDING,
         name: "Spending",
-        account_type: "TRANSACTIONAL",
-        ownership_type: "INDIVIDUAL",
+        account_type: AccountType::Transactional,
+        ownership_type: OwnershipType::Individual,
         opening_balance: 185_000,
     },
     AccountSpec {
         id: TWO_UP,
         name: "2Up Spending",
-        account_type: "TRANSACTIONAL",
-        ownership_type: "JOINT",
+        account_type: AccountType::Transactional,
+        ownership_type: OwnershipType::Joint,
         opening_balance: 64_000,
     },
     AccountSpec {
         id: HOLIDAY,
         // With U+FE0F: the emoji ratatui mishandles (see `backend.rs`).
         name: "🏖\u{FE0F} Holiday",
-        account_type: "SAVER",
-        ownership_type: "INDIVIDUAL",
+        account_type: AccountType::Saver,
+        ownership_type: OwnershipType::Individual,
         opening_balance: 210_000,
     },
     AccountSpec {
         id: RAINY_DAY,
         name: "🛟 Rainy day",
-        account_type: "SAVER",
-        ownership_type: "INDIVIDUAL",
+        account_type: AccountType::Saver,
+        ownership_type: OwnershipType::Individual,
         opening_balance: 800_000,
     },
     AccountSpec {
         id: HOME_LOAN,
         name: "Home Loan",
-        account_type: "HOME_LOAN",
-        ownership_type: "JOINT",
+        account_type: AccountType::HomeLoan,
+        ownership_type: OwnershipType::Joint,
         opening_balance: -51_234_018,
     },
 ];
@@ -350,8 +351,8 @@ impl Generator {
                 Account {
                     id: spec.id.to_string(),
                     display_name: spec.name.to_string(),
-                    account_type: spec.account_type.to_string(),
-                    ownership_type: spec.ownership_type.to_string(),
+                    account_type: spec.account_type.clone(),
+                    ownership_type: spec.ownership_type.clone(),
                     balance: aud(balance),
                 }
             })

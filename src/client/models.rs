@@ -101,8 +101,8 @@ impl From<Resource<CategoryAttributes, CategoryRelationships>> for Category {
 #[serde(rename_all = "camelCase")]
 pub struct AccountAttributes {
     pub display_name: String,
-    pub account_type: String,
-    pub ownership_type: String,
+    pub account_type: AccountType,
+    pub ownership_type: OwnershipType,
     pub balance: MoneyObject,
     pub created_at: Timestamp,
 }
@@ -331,22 +331,75 @@ pub struct PaginatedResponse<T> {
 pub struct Account {
     pub id: String,
     pub display_name: String,
-    /// `TRANSACTIONAL`, `SAVER` or `HOME_LOAN`.
-    pub account_type: String,
-    /// `INDIVIDUAL` or `JOINT` (a 2Up account).
-    pub ownership_type: String,
+    pub account_type: AccountType,
+    pub ownership_type: OwnershipType,
     pub balance: MoneyObject,
 }
 
-impl Account {
+/// The kind of account. Types the app doesn't know (yet) are kept as the API names
+/// them, and shown that way.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AccountType {
+    Transactional,
+    Saver,
+    HomeLoan,
+    #[serde(untagged)]
+    Other(String),
+}
+
+impl AccountType {
     /// Sort key for showing accounts grouped by type: spending accounts, then savers,
     /// then home loans, then anything else.
-    pub fn type_order(&self) -> u8 {
-        match self.account_type.as_str() {
-            "TRANSACTIONAL" => 0,
-            "SAVER" => 1,
-            "HOME_LOAN" => 2,
-            _ => 3,
+    pub fn order(&self) -> u8 {
+        match self {
+            AccountType::Transactional => 0,
+            AccountType::Saver => 1,
+            AccountType::HomeLoan => 2,
+            AccountType::Other(_) => 3,
+        }
+    }
+
+    /// The name of an account of this type, e.g. "Saver".
+    pub fn name(&self) -> &str {
+        match self {
+            AccountType::Transactional => "Spending account",
+            AccountType::Saver => "Saver",
+            AccountType::HomeLoan => "Home loan",
+            AccountType::Other(other) => other,
+        }
+    }
+
+    /// The heading of a group of accounts of this type, e.g. "Savers".
+    pub fn group_name(&self) -> &str {
+        match self {
+            AccountType::Transactional => "Spending",
+            AccountType::Saver => "Savers",
+            AccountType::HomeLoan => "Home loans",
+            AccountType::Other(other) => other,
+        }
+    }
+}
+
+/// Who owns an account. Types the app doesn't know (yet) are kept as the API names
+/// them, and shown that way.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OwnershipType {
+    Individual,
+    /// A 2Up account, shared with another person.
+    Joint,
+    #[serde(untagged)]
+    Other(String),
+}
+
+impl OwnershipType {
+    /// A readable name, e.g. "Joint (2Up)".
+    pub fn name(&self) -> &str {
+        match self {
+            OwnershipType::Individual => "Individual",
+            OwnershipType::Joint => "Joint (2Up)",
+            OwnershipType::Other(other) => other,
         }
     }
 }
@@ -388,6 +441,15 @@ pub struct Transaction {
     pub tags: Vec<String>,
     /// Account id of the other side of a transfer between the user's own accounts.
     pub transfer_account: Option<String>,
+}
+
+impl Transaction {
+    /// The root category the transaction is in: its category's parent, or its category
+    /// if that has no parent (Up's categories are two levels deep). This comes with the
+    /// transaction, so it doesn't depend on the categories having loaded.
+    pub fn root_category(&self) -> Option<&str> {
+        self.parent_category.as_deref().or(self.category.as_deref())
+    }
 }
 
 impl From<Resource<TransactionAttributes, TransactionRelationships>> for Transaction {
@@ -543,5 +605,20 @@ mod tests {
     fn large_amounts_are_exact() {
         let m = money("90071992547409.93", 9007199254740993, "AUD");
         assert_eq!(m.format_signed(), "$90071992547409.93");
+    }
+
+    #[test]
+    fn unknown_account_types_are_kept_as_named() {
+        use super::{AccountType, OwnershipType};
+        let account_type = |json| serde_json::from_str::<AccountType>(json).unwrap();
+        assert_eq!(account_type(r#""SAVER""#), AccountType::Saver);
+        assert_eq!(account_type(r#""HOME_LOAN""#), AccountType::HomeLoan);
+        let other = account_type(r#""CREDIT_CARD""#);
+        assert_eq!(other, AccountType::Other("CREDIT_CARD".to_string()));
+        assert_eq!(other.name(), "CREDIT_CARD");
+        assert_eq!(
+            serde_json::from_str::<OwnershipType>(r#""JOINT""#).unwrap(),
+            OwnershipType::Joint
+        );
     }
 }

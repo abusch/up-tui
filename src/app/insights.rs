@@ -19,14 +19,14 @@ pub struct CategorySpending {
 /// Money spent by root category (Up's top-level categories, such as Good Life), with
 /// the transactions without a category as `None`. See `spending_by`.
 pub fn spending_by_root(transactions: &[Transaction]) -> Vec<CategorySpending> {
-    spending_by(transactions, |txn| Some(root_category(txn)))
+    spending_by(transactions, |txn| Some(txn.root_category()))
 }
 
 /// Money spent in each category within the root category `root` (`None`: the
 /// transactions without a category, which are a single `None` row). See `spending_by`.
 pub fn spending_in_root(transactions: &[Transaction], root: Option<&str>) -> Vec<CategorySpending> {
     spending_by(transactions, |txn| {
-        (root_category(txn) == root).then_some(txn.category.as_deref())
+        (txn.root_category() == root).then_some(txn.category.as_deref())
     })
 }
 
@@ -47,13 +47,6 @@ pub fn spending_in_category<'a>(
 /// spending, so they don't count.
 fn is_spending(txn: &Transaction) -> bool {
     txn.amount.is_negative() && txn.transfer_account.is_none()
-}
-
-/// The root category a transaction is in: its category's parent, or its category if
-/// that has no parent (Up's categories are two levels deep). This comes with the
-/// transaction, so it doesn't depend on the categories having loaded.
-fn root_category(txn: &Transaction) -> Option<&str> {
-    txn.parent_category.as_deref().or(txn.category.as_deref())
 }
 
 /// Money spent (see `is_spending`), grouped by `group`, which gives a transaction's

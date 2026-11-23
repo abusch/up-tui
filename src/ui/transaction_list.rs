@@ -4,7 +4,6 @@ use ratatui::{
     widgets::{Block, HighlightSpacing, List, ListItem, Padding, Paragraph},
 };
 
-use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::state::AppState;
@@ -12,6 +11,9 @@ use crate::app::store::LoadKind;
 use crate::client::models::{MoneyObject, Transaction};
 
 use super::contrast::readable;
+use super::text::{
+    SELECTION_MARKER, SELECTION_MARKER_WIDTH, right_aligned_if_room, truncate_to_width,
+};
 use super::transaction_detail::format_day;
 
 /// Marks a transaction's category, in its root category's colour: a square, which
@@ -62,8 +64,8 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
         }
     };
 
-    // 2 for horizontal padding + 2 for highlight symbol ("▎ ")
-    let inner_width = area.width.saturating_sub(4) as usize;
+    // Less the horizontal padding and the selection marker.
+    let inner_width = usize::from(area.width).saturating_sub(2 + SELECTION_MARKER_WIDTH);
     let tz = state.tz.clone();
     let today = state.today();
     // A band across the list, so a day stands out from its transactions. In the few
@@ -74,8 +76,8 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
         .bg(state.theme.color(tokens::BG_PANEL).into());
 
     // Build list items with a header for each day, on a band and set apart by a blank
-    // row above it (rather than a rule, which is noisier). Track which list index corresponds to
-    // each transaction so we can map the selection to the right row.
+    // row above it (rather than a rule, which is noisier). Track which list index
+    // corresponds to each transaction so we can map the selection to the right row.
     let mut items: Vec<ListItem> = Vec::new();
     let mut txn_to_list_index: Vec<usize> = Vec::new();
     let mut last_date: Option<jiff::civil::Date> = None;
@@ -112,7 +114,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let list = List::new(items)
         .block(block)
         .highlight_style(Style::default().bg(selection).add_modifier(Modifier::BOLD))
-        .highlight_symbol(Line::styled("▎ ", accent))
+        .highlight_symbol(Line::styled(SELECTION_MARKER, accent))
         .highlight_spacing(HighlightSpacing::Always)
         .repeat_highlight_symbol(true);
 
@@ -143,9 +145,9 @@ fn list_status(state: &AppState) -> (Option<&'static str>, Option<Vec<&Transacti
     };
     let status = match (tab.store.loading(), &transactions) {
         (None, _) => None,
-        (Some(_), None) => Some("Loading..."),
-        (Some(LoadKind::Replace), Some(_)) => Some("Refreshing..."),
-        (Some(LoadKind::Append), Some(_)) => Some("Loading more..."),
+        (Some(_), None) => Some("Loading…"),
+        (Some(LoadKind::Replace), Some(_)) => Some("Refreshing…"),
+        (Some(LoadKind::Append), Some(_)) => Some("Loading more…"),
     };
     (status, transactions)
 }
@@ -164,7 +166,10 @@ pub fn draw_filter_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
     let left = vec![
         Span::styled(" Spending on ", fg(tokens::TEXT_SECONDARY)),
         Span::styled(
-            category_path(category, state),
+            match category {
+                Some(id) => state.category_path(Some(state.categories.root(id)), id),
+                None => state.category_label(None).to_string(),
+            },
             Style::default()
                 .fg(state.category_color(category))
                 .add_modifier(Modifier::BOLD),
@@ -186,36 +191,11 @@ pub fn draw_filter_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
         None => format!("{count} "),
     };
 
-    // The right part is left out if it doesn't fit.
-    let left_width: usize = left.iter().map(|s| s.content.width()).sum();
-    let width = usize::from(area.width);
-    let mut spans = left;
-    if left_width + 1 + right.width() <= width {
-        spans.push(Span::raw(" ".repeat(width - left_width - right.width())));
-        let dim = readable(theme, tokens::TEXT_DIM, tokens::BG_HIGHLIGHT);
-        spans.push(Span::styled(right, Style::default().fg(dim)));
-    }
-    Paragraph::new(Line::from(spans))
+    let dim = readable(theme, tokens::TEXT_DIM, tokens::BG_HIGHLIGHT);
+    let right = vec![Span::styled(right, Style::default().fg(dim))];
+    Paragraph::new(right_aligned_if_room(left, right, usize::from(area.width)))
         .style(Style::default().bg(theme.color(tokens::BG_HIGHLIGHT).into()))
         .render(area, buf);
-}
-
-/// A category's name with its parent's, like the detail pane's
-/// ("Good Life › Restaurants & Cafes"), or "Uncategorised".
-fn category_path(category: Option<&str>, state: &AppState) -> String {
-    let Some(id) = category else {
-        return "Uncategorised".to_string();
-    };
-    let root = state.categories.root(id);
-    if root == id {
-        state.category_name(id).to_string()
-    } else {
-        format!(
-            "{} › {}",
-            state.category_name(root),
-            state.category_name(id)
-        )
-    }
 }
 
 fn build_transaction_item<'a>(
@@ -254,7 +234,7 @@ fn build_transaction_item<'a>(
     let dim = readable(palette, tokens::TEXT_DIM, bg);
     let mut line2 = Vec::new();
     if let Some(id) = txn.category.as_deref().or(txn.parent_category.as_deref()) {
-        let color = state.category_color(txn.parent_category.as_deref().or(Some(id)));
+        let color = state.category_color(txn.root_category());
         // Leave at least one column before the time.
         let name_width = inner_width.saturating_sub(time.width() + 1 + 2);
         line2.push(Span::styled(CATEGORY_SYMBOL, color));
@@ -272,31 +252,6 @@ fn build_transaction_item<'a>(
     let line2 = Line::from(line2);
 
     ListItem::new(Text::from(vec![line1, line2]))
-}
-
-/// Truncate `s` to at most `max_width` terminal columns, appending `…` if anything was cut.
-pub(super) fn truncate_to_width(s: &str, max_width: usize) -> String {
-    if s.width() <= max_width {
-        return s.to_string();
-    }
-    if max_width == 0 {
-        return String::new();
-    }
-    let budget = max_width - 1; // reserve one column for the ellipsis
-    let mut out = String::new();
-    let mut width = 0;
-    // Measure whole graphemes, as ratatui does: an emoji followed by a variation
-    // selector is wider than its characters' widths added up, and mustn't be split.
-    for grapheme in s.graphemes(true) {
-        let w = grapheme.width();
-        if width + w > budget {
-            break;
-        }
-        out.push_str(grapheme);
-        width += w;
-    }
-    out.push('…');
-    out
 }
 
 #[cfg(test)]
@@ -493,42 +448,6 @@ mod tests {
         state.tabs[0]
             .store
             .refresh("2026-11-01T00:00:00Z".parse().unwrap());
-        assert_eq!(render(&mut state)[0], " Refreshing...");
-    }
-
-    #[test]
-    fn short_strings_are_unchanged() {
-        assert_eq!(truncate_to_width("Café", 10), "Café");
-        assert_eq!(truncate_to_width("Café", 4), "Café");
-    }
-
-    #[test]
-    fn truncation_fits_width_exactly() {
-        let s = truncate_to_width("Woolworths Metro", 8);
-        assert_eq!(s, "Woolwor…");
-        assert_eq!(s.width(), 8);
-    }
-
-    #[test]
-    fn multibyte_and_wide_characters_are_measured_in_columns() {
-        assert_eq!(truncate_to_width("Café Allongé", 6), "Café …");
-        // Each CJK character is 2 columns wide; a split one is dropped, not cut in half.
-        let s = truncate_to_width("寿司寿司", 6);
-        assert_eq!(s, "寿司…");
-        assert!(s.width() <= 6);
-    }
-
-    #[test]
-    fn emoji_with_a_selector_are_measured_whole() {
-        // "🏖\u{FE0F}" is 2 columns, though its characters are 1 and 0 columns wide.
-        let s = truncate_to_width("🏖\u{FE0F}🏖\u{FE0F} Beach", 4);
-        assert_eq!(s, "🏖\u{FE0F}…");
-        assert_eq!(s.width(), 3);
-        assert_eq!(truncate_to_width("a🏖\u{FE0F}bc", 3), "a…");
-    }
-
-    #[test]
-    fn zero_width_yields_empty() {
-        assert_eq!(truncate_to_width("abc", 0), "");
+        assert_eq!(render(&mut state)[0], " Refreshing…");
     }
 }

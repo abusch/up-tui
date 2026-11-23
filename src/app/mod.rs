@@ -62,7 +62,7 @@ impl App {
         self.fetch_accounts(false);
         self.fetch_categories();
 
-        self.info("Loading accounts...");
+        self.info("Loading accounts…");
         while !self.state.should_quit {
             terminal.draw(|f| self.render(f.area(), f.buffer_mut()))?;
 
@@ -157,6 +157,11 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        // Ctrl+C quits whatever is on screen, including the theme picker.
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.state.should_quit = true;
+            return;
+        }
         match self.state.mode {
             AppMode::Normal => self.handle_normal_key(key),
             AppMode::Theme(ref mut selector) => {
@@ -183,9 +188,6 @@ impl App {
                 }
             }
             AppMode::Help { ref mut scroll } => match key.code {
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.state.should_quit = true;
-                }
                 KeyCode::Char('?') | KeyCode::Char('q') | KeyCode::Esc => {
                     self.state.mode = AppMode::Normal;
                 }
@@ -194,9 +196,6 @@ impl App {
                 _ => {}
             },
             AppMode::QrCode(_) => match key.code {
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.state.should_quit = true;
-                }
                 KeyCode::Char('o') | KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter => {
                     self.state.mode = AppMode::Normal;
                 }
@@ -231,9 +230,6 @@ impl App {
             KeyCode::Char('q') | KeyCode::Char('Q') => {
                 self.state.should_quit = true;
             }
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.state.should_quit = true;
-            }
             KeyCode::Tab | KeyCode::Char('l') => {
                 self.state.next_tab();
                 self.ensure_tab_loaded();
@@ -266,7 +262,7 @@ impl App {
                 // Re-fetch accounts too: this refreshes balances, and recovers if the
                 // initial accounts load failed (in which case there are no tabs yet).
                 if self.state.tabs.is_empty() {
-                    self.info("Loading accounts...");
+                    self.info("Loading accounts…");
                 }
                 self.fetch_accounts(true);
                 self.refresh_tab(self.state.active_tab);
@@ -382,7 +378,7 @@ impl App {
     fn ensure_tab_loaded(&mut self) {
         let idx = self.state.active_tab;
         if self.load_tab(idx) && self.state.tabs[idx].store.transactions().is_none() {
-            self.info("Loading transactions...");
+            self.info("Loading transactions…");
         }
     }
 

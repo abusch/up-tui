@@ -16,8 +16,15 @@ use crate::app::state::QrCodePopup;
 const DARK: Color = Color::Rgb(0, 0, 0);
 const LIGHT: Color = Color::Rgb(255, 255, 255);
 
-/// Draw the popup centred in `area`.
-pub fn draw_qr_code(buf: &mut Buffer, area: Rect, theme: &Theme, popup: &QrCodePopup) {
+/// Draw the popup centred in `area`, part of a `screen` that may not be big enough for
+/// it (it then says how big the screen must be).
+pub fn draw_qr_code(
+    buf: &mut Buffer,
+    area: Rect,
+    screen: Rect,
+    theme: &Theme,
+    popup: &QrCodePopup,
+) {
     let dim = Style::default().fg(readable(theme, tokens::TEXT_DIM, tokens::BG_ELEVATED));
     let block = Block::new()
         .title(Line::from(vec![
@@ -52,12 +59,12 @@ pub fn draw_qr_code(buf: &mut Buffer, area: Rect, theme: &Theme, popup: &QrCodeP
     let height = qr_size.height.saturating_add(frame_height);
 
     if width > area.width || height > area.height {
-        // A cropped code can't be scanned: ask for room instead.
+        // A cropped code can't be scanned: ask for room instead, including what the
+        // rest of the screen takes (the header and status bars).
+        let screen_width = width.saturating_add(screen.width.saturating_sub(area.width));
+        let screen_height = height.saturating_add(screen.height.saturating_sub(area.height));
         let message = Line::styled(
-            format!(
-                "Make the window at least {width}×{} to show the QR code",
-                height.saturating_add(2) // the header and status bars
-            ),
+            format!("Make the window at least {screen_width}×{screen_height} to show the QR code"),
             dim,
         )
         .centered();

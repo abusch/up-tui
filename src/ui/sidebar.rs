@@ -6,14 +6,10 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use super::contrast::readable;
-use super::transaction_list::truncate_to_width;
+use super::text::{SELECTION_MARKER, SELECTION_MARKER_WIDTH, heading, truncate_to_width};
 use crate::app::state::AppState;
-use crate::client::models::{Account, MoneyObject};
+use crate::client::models::MoneyObject;
 
-/// Drawn before the selected account, like the transaction list's selection marker.
-/// Other rows are indented by the same width.
-const MARKER: &str = "▎ ";
-const MARKER_WIDTH: usize = 2;
 /// Minimum space between an account's name and its balance.
 const MIN_GAP: usize = 2;
 /// Columns taken by the right border and the horizontal padding.
@@ -30,7 +26,7 @@ pub fn sidebar_width(state: &AppState, available: u16) -> u16 {
         .map(|tab| (tab.account.display_name.as_str(), &tab.account.balance))
         .chain(total_balance(state).as_ref().map(|total| ("Total", total)))
         .map(|(name, balance)| {
-            MARKER_WIDTH + name.width() + MIN_GAP + balance.format_signed().width()
+            SELECTION_MARKER_WIDTH + name.width() + MIN_GAP + balance.format_signed().width()
         })
         .max()
         .unwrap_or(0);
@@ -70,23 +66,22 @@ pub fn draw_sidebar(buf: &mut Buffer, area: Rect, state: &AppState) {
     let mut group = None;
     for (i, tab) in state.tabs.iter().enumerate() {
         let account = &tab.account;
-        let account_group = group_name(account);
+        let account_group = account.account_type.group_name();
         if group != Some(account_group) {
             if group.is_some() {
                 lines.push(Line::default());
             }
             group = Some(account_group);
-            let heading = format!("{} ", account_group.to_uppercase());
-            let fill = width.saturating_sub(MARKER_WIDTH);
+            let heading = heading(account_group, width.saturating_sub(SELECTION_MARKER_WIDTH));
             lines.push(Line::styled(
-                format!("{:MARKER_WIDTH$}{heading:┄<fill$}", ""),
+                format!("{:SELECTION_MARKER_WIDTH$}{heading}", ""),
                 heading_style,
             ));
         }
 
         let mut row = account_row(&account.display_name, &account.balance, width);
         if i == state.active_tab {
-            row.spans[0] = Span::styled(MARKER, marker_style);
+            row.spans[0] = Span::styled(SELECTION_MARKER, marker_style);
             row = row.style(selected_style);
         }
         lines.push(row);
@@ -98,16 +93,6 @@ pub fn draw_sidebar(buf: &mut Buffer, area: Rect, state: &AppState) {
     }
 
     Paragraph::new(lines).block(block).render(area, buf);
-}
-
-/// The heading of the group an account is shown in.
-fn group_name(account: &Account) -> &str {
-    match account.account_type.as_str() {
-        "TRANSACTIONAL" => "Spending",
-        "SAVER" => "Savers",
-        "HOME_LOAN" => "Home loans",
-        other => other,
-    }
 }
 
 /// The total of all balances, if there's more than one account and they can be added
@@ -124,11 +109,11 @@ fn total_balance(state: &AppState) -> Option<MoneyObject> {
 /// is the marker column, left blank.
 fn account_row(name: &str, balance: &MoneyObject, width: usize) -> Line<'static> {
     let balance = balance.format_signed();
-    let name_width = width.saturating_sub(MARKER_WIDTH + MIN_GAP + balance.width());
+    let name_width = width.saturating_sub(SELECTION_MARKER_WIDTH + MIN_GAP + balance.width());
     let name = truncate_to_width(name, name_width);
-    let gap = width.saturating_sub(MARKER_WIDTH + name.width() + balance.width());
+    let gap = width.saturating_sub(SELECTION_MARKER_WIDTH + name.width() + balance.width());
     Line::from(vec![
-        Span::raw(" ".repeat(MARKER_WIDTH)),
+        Span::raw(" ".repeat(SELECTION_MARKER_WIDTH)),
         Span::raw(name),
         Span::raw(" ".repeat(gap)),
         Span::raw(balance),
@@ -139,10 +124,11 @@ fn account_row(name: &str, balance: &MoneyObject, width: usize) -> Line<'static>
 mod tests {
     use super::*;
     use crate::app::state::tests::{account, state};
+    use crate::client::models::{Account, AccountType};
 
-    fn typed(id: &str, account_type: &str, cents: i64) -> Account {
+    fn typed(id: &str, account_type: AccountType, cents: i64) -> Account {
         Account {
-            account_type: account_type.to_string(),
+            account_type,
             ..account(id, cents)
         }
     }
@@ -175,8 +161,8 @@ mod tests {
     fn accounts_are_grouped_with_a_total() {
         let mut state = state();
         state.set_accounts(vec![
-            typed("Holiday", "SAVER", 240000),
-            typed("Spending", "TRANSACTIONAL", 123456),
+            typed("Holiday", AccountType::Saver, 240000),
+            typed("Spending", AccountType::Transactional, 123456),
         ]);
         state.active_tab = 1;
         let lines = render(&state, 32, 11);
@@ -217,7 +203,11 @@ mod tests {
     #[test]
     fn long_names_are_truncated() {
         let mut state = state();
-        state.set_accounts(vec![typed("A very long saver name", "SAVER", 100)]);
+        state.set_accounts(vec![typed(
+            "A very long saver name",
+            AccountType::Saver,
+            100,
+        )]);
         let lines = render(&state, 24, 6);
         assert_eq!(lines[3], " ▎ Account A v…  $1.00 │");
     }

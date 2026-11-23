@@ -5,6 +5,7 @@ use ratatui::{
 };
 
 use super::contrast::readable;
+use super::text::right_aligned;
 use crate::app::categories::Categories;
 use crate::app::insights::spending_by_root;
 use crate::app::state::{AppState, TabState};
@@ -66,8 +67,8 @@ fn header_lines(tab: &TabState, state: &AppState, width: usize) -> Vec<Line<'sta
         Span::styled(
             format!(
                 "  {} · {}",
-                type_name(&account.account_type),
-                ownership_name(&account.ownership_type)
+                account.account_type.name(),
+                account.ownership_type.name()
             ),
             dim,
         ),
@@ -95,13 +96,13 @@ fn header_lines(tab: &TabState, state: &AppState, width: usize) -> Vec<Line<'sta
 
     // Above the totals, on the title's line if it fits.
     let mut lines = match spending_bar(tab, state, width) {
-        Some(bar) => super::right_aligned(title, bar, width),
+        Some(bar) => right_aligned(title, bar, width),
         None => vec![Line::from(title)],
     };
     if totals.is_empty() {
         lines.push(Line::from(balance));
     } else {
-        lines.extend(super::right_aligned(balance, totals, width));
+        lines.extend(right_aligned(balance, totals, width));
     }
     lines
 }
@@ -170,31 +171,12 @@ fn split_cells(amounts: &[i64], width: u16) -> Option<Vec<usize>> {
     )
 }
 
-/// A readable name for the API's account type.
-fn type_name(account_type: &str) -> &str {
-    match account_type {
-        "TRANSACTIONAL" => "Spending account",
-        "SAVER" => "Saver",
-        "HOME_LOAN" => "Home loan",
-        other => other,
-    }
-}
-
-/// A readable name for the API's ownership type.
-fn ownership_name(ownership_type: &str) -> &str {
-    match ownership_type {
-        "INDIVIDUAL" => "Individual",
-        "JOINT" => "Joint (2Up)",
-        other => other,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::state::Period;
     use crate::app::state::tests::{account, money, state, txn};
-    use crate::client::models::{Account, Transaction};
+    use crate::client::models::{Account, AccountType, OwnershipType, Transaction};
 
     fn render(state: &AppState, width: u16) -> Vec<String> {
         let height = header_height(state, width);
@@ -218,8 +200,8 @@ mod tests {
         state.period = Period::Last30Days;
         state.set_accounts(vec![Account {
             display_name: "Holiday".to_string(),
-            account_type: "SAVER".to_string(),
-            ownership_type: "JOINT".to_string(),
+            account_type: AccountType::Saver,
+            ownership_type: OwnershipType::Joint,
             ..account("h", 240000)
         }]);
         state

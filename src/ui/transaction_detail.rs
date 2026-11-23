@@ -7,6 +7,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use super::contrast::readable;
+use super::text;
 use crate::app::state::AppState;
 use crate::client::models::{MoneyObject, Transaction, TransactionStatus};
 
@@ -91,18 +92,9 @@ fn detail_lines(
     };
     out.right_aligned(amount, status);
 
-    let category = match (&txn.parent_category, &txn.category) {
-        (Some(parent), Some(cat)) => Some(format!(
-            "{} › {}",
-            state.category_name(parent),
-            state.category_name(cat)
-        )),
-        (Some(id), None) | (None, Some(id)) => Some(state.category_name(id).to_string()),
-        (None, None) => None,
-    };
-    if let Some(category) = category {
-        let color =
-            state.category_color(txn.parent_category.as_deref().or(txn.category.as_deref()));
+    if let Some(id) = txn.category.as_deref().or(txn.parent_category.as_deref()) {
+        let category = state.category_path(txn.parent_category.as_deref(), id);
+        let color = state.category_color(txn.root_category());
         out.wrapped(&category, Style::default().fg(color));
     }
     out.tags(
@@ -212,7 +204,7 @@ impl DetailLines {
     /// they don't both fit.
     fn right_aligned(&mut self, left: Vec<Span<'static>>, right: Span<'static>) {
         self.lines
-            .extend(super::right_aligned(left, vec![right], self.width));
+            .extend(text::right_aligned(left, vec![right], self.width));
     }
 
     /// Tags as padded "pills", wrapping between tags.
@@ -242,9 +234,8 @@ impl DetailLines {
     /// separators in the transaction list.
     fn heading(&mut self, title: &str) {
         self.lines.push(Line::default());
-        let title = format!("{} ", title.to_uppercase());
         self.lines.push(Line::styled(
-            format!("{title:┄<width$}", width = self.width),
+            text::heading(title, self.width),
             self.heading_style,
         ));
     }

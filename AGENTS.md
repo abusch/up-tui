@@ -29,8 +29,9 @@ src/
   ui/
     mod.rs             Top-level layout (Widget impl for App), theme picker overlay
     contrast.rs        readable(): dim text that stays readable on its background
+    text.rs            Shared text layout: truncation, alignment, selection marker, headings
     sidebar.rs, header_bar.rs, account_header.rs, insights.rs,
-    transaction_list.rs, transaction_detail.rs, status_bar.rs, help.rs
+    transaction_list.rs, transaction_detail.rs, status_bar.rs, help.rs, qr_code.rs
 ```
 
 ## Configuration

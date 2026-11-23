@@ -41,7 +41,7 @@ impl Period {
         }
     }
 
-    /// The period at the end of a sentence as of `today`, e.g. "spent in November".
+    /// The period at the end of a sentence as of `today`, e.g. "in November" (as in "spent in November").
     pub fn phrase(self, today: Date) -> String {
         match self {
             Period::ThisMonth => format!("in {}", today.strftime("%B")),
@@ -279,7 +279,7 @@ impl TabState {
 
 pub struct AppState {
     /// One tab per account (shown in the sidebar), grouped by account type as
-    /// `Account::type_order` sorts them, and otherwise in the order the API returns
+    /// `AccountType::order` sorts them, and otherwise in the order the API returns
     /// them. The sidebar and next/previous account follow this order.
     pub tabs: Vec<TabState>,
     pub active_tab: usize,
@@ -366,7 +366,8 @@ impl AppState {
             })
             .collect();
         // A stable sort, so accounts of the same type keep the API's order.
-        self.tabs.sort_by_key(|tab| tab.account.type_order());
+        self.tabs
+            .sort_by_key(|tab| tab.account.account_type.order());
         self.active_tab = active_id.and_then(|id| self.tab_index(&id)).unwrap_or(0);
     }
 
@@ -412,10 +413,6 @@ impl AppState {
         Some((txns, list))
     }
 
-    pub fn current_tab_mut(&mut self) -> Option<&mut TabState> {
-        self.tabs.get_mut(self.active_tab)
-    }
-
     pub fn next_tab(&mut self) {
         if !self.tabs.is_empty() {
             self.select_tab((self.active_tab + 1) % self.tabs.len());
@@ -445,6 +442,25 @@ impl AppState {
         self.categories.name(id)
     }
 
+    /// A category's display name, or "Uncategorised" for `None` (transactions without
+    /// a category).
+    pub fn category_label<'a>(&'a self, id: Option<&'a str>) -> &'a str {
+        id.map_or("Uncategorised", |id| self.category_name(id))
+    }
+
+    /// A category's name after its parent's, e.g. "Good Life › Restaurants & Cafes", or
+    /// just its name if it has no parent (or is its own `parent`, as a root is).
+    pub fn category_path(&self, parent: Option<&str>, id: &str) -> String {
+        match parent.filter(|&parent| parent != id) {
+            Some(parent) => format!(
+                "{} › {}",
+                self.category_name(parent),
+                self.category_name(id)
+            ),
+            None => self.category_name(id).to_string(),
+        }
+    }
+
     /// The colour for a category: its root category's colour token (see
     /// `Categories::color_token`). Transactions without a category, or with one that
     /// isn't known (yet), are `TEXT_MUTED`.
@@ -467,7 +483,7 @@ impl AppState {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::client::models::{MoneyObject, TransactionStatus};
+    use crate::client::models::{AccountType, MoneyObject, OwnershipType, TransactionStatus};
 
     pub fn money(cents: i64) -> MoneyObject {
         MoneyObject {
@@ -572,8 +588,8 @@ pub(crate) mod tests {
         Account {
             id: id.to_string(),
             display_name: format!("Account {id}"),
-            account_type: "TRANSACTIONAL".to_string(),
-            ownership_type: "INDIVIDUAL".to_string(),
+            account_type: AccountType::Transactional,
+            ownership_type: OwnershipType::Individual,
             balance: money(cents),
         }
     }
@@ -685,17 +701,17 @@ pub(crate) mod tests {
 
     #[test]
     fn set_accounts_groups_accounts_by_type() {
-        let typed = |id, account_type: &str| Account {
-            account_type: account_type.to_string(),
+        let typed = |id, account_type: AccountType| Account {
+            account_type,
             ..account(id, 0)
         };
         let mut s = state();
         s.set_accounts(vec![
-            typed("saver1", "SAVER"),
-            typed("spending", "TRANSACTIONAL"),
-            typed("loan", "HOME_LOAN"),
-            typed("saver2", "SAVER"),
-            typed("2up", "TRANSACTIONAL"),
+            typed("saver1", AccountType::Saver),
+            typed("spending", AccountType::Transactional),
+            typed("loan", AccountType::HomeLoan),
+            typed("saver2", AccountType::Saver),
+            typed("2up", AccountType::Transactional),
         ]);
         s.active_tab = s.tab_index("saver2").unwrap();
         let ids: Vec<_> = s.tabs.iter().map(|t| t.account.id.as_str()).collect();
@@ -703,8 +719,8 @@ pub(crate) mod tests {
 
         // The active account stays selected when the order changes.
         s.set_accounts(vec![
-            typed("saver2", "SAVER"),
-            typed("spending", "TRANSACTIONAL"),
+            typed("saver2", AccountType::Saver),
+            typed("spending", AccountType::Transactional),
         ]);
         assert_eq!(s.current_tab().unwrap().account.id, "saver2");
     }

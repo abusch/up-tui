@@ -4,7 +4,7 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use super::contrast::readable;
-use super::transaction_list::truncate_to_width;
+use super::text::truncate_to_width;
 use crate::app::state::{AppState, MessageKind};
 
 /// The app's name and version, at the left of the header bar.

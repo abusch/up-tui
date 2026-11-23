@@ -8,17 +8,13 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use super::contrast::readable;
-use super::transaction_list::truncate_to_width;
+use super::text::{SELECTION_MARKER, SELECTION_MARKER_WIDTH, truncate_to_width};
 use crate::app::insights::{CategorySpending, daily_balances, spending_by_root, spending_in_root};
 use crate::app::state::{AppState, TabState};
 use crate::client::models::MoneyObject;
 
 /// Partial blocks for the fractional end of a bar, in eighths (index 1 is ⅛).
 const PARTIAL_BLOCKS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
-/// Drawn before the selected category, like the transaction list's selection
-/// marker. Other rows are indented by the same width.
-const MARKER: &str = "▎ ";
-const MARKER_WIDTH: usize = 2;
 /// Maximum width of the category name column.
 const MAX_NAME_WIDTH: usize = 24;
 /// Width of the percentage column ("100%").
@@ -51,9 +47,9 @@ pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
     };
     let Some(recent) = tab.store.recent() else {
         let message = if tab.store.loading().is_some() {
-            "Loading…".to_string()
+            "Loading…"
         } else {
-            "Couldn't load this period's transactions. Press r to retry.".to_string()
+            "Couldn't load this period's transactions. Press r to retry."
         };
         Paragraph::new(Line::styled(message, dim(state))).render(inner, buf);
         return;
@@ -77,7 +73,7 @@ pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
     let section = match insights.root.row(&roots) {
         Some(root) if insights.breakdown => {
             let spending = spending_in_root(recent, root.category.as_deref());
-            let name = category_name(root.category.as_deref(), state);
+            let name = state.category_label(root.category.as_deref());
             CategorySection {
                 heading: format!("Spending on {name}"),
                 selected: insights.subcategory.index(&spending),
@@ -111,16 +107,7 @@ pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
 /// A section heading filled to `width`, like the detail pane's.
 fn heading(title: &str, width: usize, state: &AppState) -> Line<'static> {
     let style = dim(state).add_modifier(Modifier::BOLD);
-    let title = format!("{} ", title.to_uppercase());
-    Line::styled(format!("{title:┄<width$}"), style)
-}
-
-/// A category's display name, or "Uncategorised" for `None`.
-fn category_name(category: Option<&str>, state: &AppState) -> String {
-    match category {
-        Some(id) => state.category_name(id).to_string(),
-        None => "Uncategorised".to_string(),
-    }
+    Line::styled(super::text::heading(title, width), style)
 }
 
 /// A row of the category list: the name, the bar's colour (its root category's) and
@@ -135,7 +122,7 @@ impl Row {
     fn new(spending: &CategorySpending, state: &AppState) -> Self {
         let category = spending.category.as_deref();
         Row {
-            name: category_name(category, state),
+            name: state.category_label(category).to_string(),
             color: state.category_color(category),
             amount: spending.total,
         }
@@ -234,8 +221,9 @@ fn bar_lines(
         .min(MAX_NAME_WIDTH)
         .min(width / 3);
     // Marker, name, gap, bar, gap, amount, gap, percentage.
-    let bar_width =
-        width.saturating_sub(MARKER_WIDTH + name_width + 2 + 1 + amount_width + 2 + PERCENT_WIDTH);
+    let bar_width = width.saturating_sub(
+        SELECTION_MARKER_WIDTH + name_width + 2 + 1 + amount_width + 2 + PERCENT_WIDTH,
+    );
     let largest = rows.iter().map(|row| row.amount).max().unwrap_or(1).max(1);
 
     rows.iter()
@@ -248,9 +236,9 @@ fn bar_lines(
             let bar_padding = bar_width.saturating_sub(bar.width());
             let is_selected = selected == Some(i);
             let marker = if is_selected {
-                Span::styled(MARKER, fg(tokens::ACCENT_PRIMARY))
+                Span::styled(SELECTION_MARKER, fg(tokens::ACCENT_PRIMARY))
             } else {
-                Span::raw(" ".repeat(MARKER_WIDTH))
+                Span::raw(" ".repeat(SELECTION_MARKER_WIDTH))
             };
             let line = Line::from(vec![
                 marker,
