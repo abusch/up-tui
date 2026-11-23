@@ -7,6 +7,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use super::contrast::readable;
 use super::transaction_list::truncate_to_width;
 use crate::app::insights::{CategorySpending, daily_balances, spending_by_root, spending_in_root};
 use crate::app::state::{AppState, TabState};
@@ -54,7 +55,7 @@ pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
         } else {
             "Couldn't load this period's transactions. Press r to retry.".to_string()
         };
-        Paragraph::new(Line::styled(message, fg(tokens::TEXT_DIM))).render(inner, buf);
+        Paragraph::new(Line::styled(message, dim(state))).render(inner, buf);
         return;
     };
 
@@ -109,9 +110,7 @@ pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
 
 /// A section heading filled to `width`, like the detail pane's.
 fn heading(title: &str, width: usize, state: &AppState) -> Line<'static> {
-    let style = Style::default()
-        .fg(state.theme.color(tokens::TEXT_DIM).into())
-        .add_modifier(Modifier::BOLD);
+    let style = dim(state).add_modifier(Modifier::BOLD);
     let title = format!("{} ", title.to_uppercase());
     Line::styled(format!("{title:┄<width$}"), style)
 }
@@ -202,8 +201,9 @@ fn money(tab: &TabState, base_units: i64) -> String {
         .unwrap_or_default()
 }
 
+/// Dim text, on the view's background.
 fn dim(state: &AppState) -> Style {
-    Style::default().fg(state.theme.color(tokens::TEXT_DIM).into())
+    Style::default().fg(readable(&state.theme, tokens::TEXT_DIM, tokens::BG_BASE))
 }
 
 /// A line per row: a marker column (with the marker on the `selected` row, which is
@@ -222,6 +222,7 @@ fn bar_lines(
     let selected_style = Style::default()
         .bg(theme.color(tokens::BG_SELECTION).into())
         .add_modifier(Modifier::BOLD);
+    let dim_selected = Style::default().fg(readable(theme, tokens::TEXT_DIM, tokens::BG_SELECTION));
 
     let amounts: Vec<String> = rows.iter().map(|row| money(tab, row.amount)).collect();
     let amount_width = amounts.iter().map(|a| a.width()).max().unwrap_or(0);
@@ -263,7 +264,11 @@ fn bar_lines(
                 ),
                 Span::styled(
                     format!("  {:>PERCENT_WIDTH$}", percent(row.amount, total)),
-                    fg(tokens::TEXT_DIM),
+                    if is_selected {
+                        dim_selected
+                    } else {
+                        dim(state)
+                    },
                 ),
             ]);
             if is_selected {
@@ -308,7 +313,7 @@ fn draw_balance_chart(buf: &mut Buffer, area: Rect, tab: &TabState, state: &AppS
     }
     let theme = &state.theme;
     let fg = |token| Style::default().fg(theme.color(token).into());
-    let dim = fg(tokens::TEXT_DIM);
+    let dim = dim(state);
 
     let [heading_area, chart_area] =
         Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);

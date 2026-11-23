@@ -7,6 +7,8 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 use unicode_width::UnicodeWidthStr;
 
+use super::contrast::readable;
+
 /// The key bindings, by section: a heading, and the keys and what they do. Keep this
 /// in sync with the README.
 const SECTIONS: &[(&str, &[(&str, &str)])] = &[
@@ -110,7 +112,9 @@ pub fn draw_help(buf: &mut Buffer, area: Rect, theme: &Theme, scroll: &mut u16) 
 fn help_lines(theme: &Theme) -> Vec<Line<'static>> {
     let fg = |token| Style::from(theme.color(token));
     // As in the detail pane and the status bar.
-    let heading = fg(tokens::TEXT_DIM).bold();
+    let heading = Style::default()
+        .fg(readable(theme, tokens::TEXT_DIM, tokens::BG_ELEVATED))
+        .bold();
     let key = fg(tokens::INFO);
     let action = fg(tokens::TEXT_PRIMARY);
 

@@ -11,6 +11,7 @@ use crate::app::state::AppState;
 use crate::app::store::LoadKind;
 use crate::client::models::{MoneyObject, Transaction};
 
+use super::contrast::readable;
 use super::transaction_detail::format_day;
 
 /// The list's block, without its style.
@@ -48,7 +49,8 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
         loaded => {
             block.render(area, buf);
             if loaded.is_some() {
-                let dim = Style::default().fg(state.theme.color(tokens::TEXT_DIM).into());
+                let dim =
+                    Style::default().fg(readable(&state.theme, tokens::TEXT_DIM, tokens::BG_BASE));
                 Paragraph::new(Line::styled("No transactions.", dim)).render(inner, buf);
             }
             return;
@@ -72,6 +74,7 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let mut items: Vec<ListItem> = Vec::new();
     let mut txn_to_list_index: Vec<usize> = Vec::new();
     let mut last_date: Option<jiff::civil::Date> = None;
+    let selected_id = state.selected_transaction().map(|txn| &txn.id);
 
     for txn in transactions {
         let zdt = txn.created_at.to_zoned_datetime(tz.clone());
@@ -86,7 +89,19 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
         }
 
         txn_to_list_index.push(items.len());
-        items.push(build_transaction_item(txn, &zdt, inner_width, &state.theme));
+        // The selected row's dim text is on the selection's background.
+        let row_bg = if selected_id == Some(&txn.id) {
+            tokens::BG_SELECTION
+        } else {
+            tokens::BG_BASE
+        };
+        items.push(build_transaction_item(
+            txn,
+            &zdt,
+            inner_width,
+            &state.theme,
+            row_bg,
+        ));
     }
 
     let list = List::new(items)
@@ -172,7 +187,8 @@ pub fn draw_filter_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
     let mut spans = left;
     if left_width + 1 + right.width() <= width {
         spans.push(Span::raw(" ".repeat(width - left_width - right.width())));
-        spans.push(Span::styled(right, fg(tokens::TEXT_DIM)));
+        let dim = readable(theme, tokens::TEXT_DIM, tokens::BG_HIGHLIGHT);
+        spans.push(Span::styled(right, Style::default().fg(dim)));
     }
     Paragraph::new(Line::from(spans))
         .style(Style::default().bg(theme.color(tokens::BG_HIGHLIGHT).into()))
@@ -202,6 +218,7 @@ fn build_transaction_item<'a>(
     zdt: &jiff::ZonedDateTime,
     inner_width: usize,
     palette: &opaline::Theme,
+    bg: &str,
 ) -> ListItem<'a> {
     let time = zdt.strftime("%H:%M").to_string();
     let amount = txn.amount.format_display();
@@ -224,7 +241,7 @@ fn build_transaction_item<'a>(
         Span::raw(" ".repeat(padding)),
         Span::styled(amount, amount_style),
     ]);
-    let line2 = Line::from(Span::styled(time, palette.color(tokens::TEXT_DIM)));
+    let line2 = Line::from(Span::styled(time, readable(palette, tokens::TEXT_DIM, bg)));
 
     ListItem::new(Text::from(vec![line1, line2]))
 }
@@ -262,6 +279,29 @@ mod tests {
         CategoryFilter, Period, TabState,
         tests::{account, money, txn},
     };
+
+    #[test]
+    fn the_selected_rows_dim_text_is_readable_on_the_selection() {
+        // Nord's dim text is all but invisible on its selection.
+        let mut state = AppState::new(Some("nord"));
+        state.tz = jiff::tz::TimeZone::UTC;
+        let mut tab = TabState::new(account("a", 0));
+        tab.set_transactions(vec![
+            txn("t0", "2020-11-20T18:00:00Z"),
+            txn("t1", "2020-11-20T09:30:00Z"),
+        ]);
+        state.tabs.push(tab);
+
+        let area = Rect::new(0, 0, 40, 10);
+        let mut buf = Buffer::empty(area);
+        draw_transaction_list(&mut buf, area, &mut state);
+        // Rows 3 and 5 are the times of the selected and the other transaction.
+        assert_eq!(buf[(3, 3)].symbol(), "1");
+        let on = |bg| readable(&state.theme, tokens::TEXT_DIM, bg);
+        assert_eq!(buf[(3, 3)].fg, on(tokens::BG_SELECTION));
+        assert_eq!(buf[(3, 5)].fg, on(tokens::BG_BASE));
+        assert_ne!(on(tokens::BG_SELECTION), on(tokens::BG_BASE));
+    }
 
     #[test]
     fn selected_row_is_marked_in_the_accent_colour() {

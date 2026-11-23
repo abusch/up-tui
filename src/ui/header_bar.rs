@@ -3,6 +3,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
+use super::contrast::readable;
 use super::transaction_list::truncate_to_width;
 use crate::app::state::{AppState, MessageKind};
 
@@ -23,7 +24,10 @@ fn header_line(state: &AppState, width: usize) -> Line<'static> {
     let fg = |token| Style::default().fg(theme.color(token).into());
     let mut spans = vec![
         Span::styled(format!(" {NAME}"), fg(tokens::ACCENT_PRIMARY).bold()),
-        Span::styled(format!(" {VERSION}"), fg(tokens::TEXT_DIM)),
+        Span::styled(
+            format!(" {VERSION}"),
+            Style::default().fg(readable(theme, tokens::TEXT_DIM, tokens::BG_HIGHLIGHT)),
+        ),
     ];
     let used: usize = spans.iter().map(|s| s.content.width()).sum();
 

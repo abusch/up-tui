@@ -2,6 +2,7 @@ use opaline::names::tokens;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Padding, Paragraph};
 
+use super::contrast::readable;
 use crate::app::state::{AppMode, AppState, View};
 
 /// Key hints in normal mode (and behind the theme picker, which shows its own). The
@@ -51,7 +52,11 @@ const HELP_HINTS: &[(&str, &str)] = &[("j/k", "scroll"), ("Esc", "close"), ("Ctr
 
 pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
     let info: Style = state.theme.color(tokens::INFO).into();
-    let fg: Style = state.theme.color(tokens::TEXT_DIM).into();
+    let fg = Style::default().fg(readable(
+        &state.theme,
+        tokens::TEXT_DIM,
+        tokens::BG_HIGHLIGHT,
+    ));
 
     let hints = match state.view {
         _ if matches!(state.mode, AppMode::Help { .. }) => HELP_HINTS,

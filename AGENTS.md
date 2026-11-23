@@ -28,6 +28,7 @@ src/
 
   ui/
     mod.rs             Top-level layout (Widget impl for App), theme picker overlay
+    contrast.rs        readable(): dim text that stays readable on its background
     sidebar.rs, header_bar.rs, account_header.rs, insights.rs,
     transaction_list.rs, transaction_detail.rs, status_bar.rs, help.rs
 ```
@@ -58,6 +59,7 @@ All errors are `rootcause` reports (`rootcause::Result`); there are no custom er
 
 - `state.theme` must always be opaline's global theme: the `ThemeSelector` picker draws with, and previews by changing, the global theme. Never set `state.theme` without also calling `opaline::set_theme`.
 - No hardcoded colours, and nothing drawn by a third-party widget with its own colours: use semantic tokens (`opaline::names::tokens`) via `theme.color(token)`. `theme.line()`/`span()`/`style()` take *style* names (`opaline::names::styles`), not tokens, and silently return an unstyled result for an unknown name.
+- Dim and muted text (`TEXT_DIM`, `TEXT_MUTED`) goes through `contrast::readable(theme, token, bg)`, with the background it's drawn on, not `theme.color()`. Themes copy editor palettes whose dim colours are barely visible even on the base background, and all but disappear on our lighter ones (Nord's `TEXT_DIM` on `BG_SELECTION`: 1.2:1). For text on a selected row, pass `BG_SELECTION`. The alternative crates (tui-nuances, ratatui-themes) have the same problem.
 - Look at how existing UI uses tokens before picking one for something new (e.g. `BG_PANEL` for side panes, `BG_SELECTION` for selections, `TEXT_DIM` for secondary text, `TEXT_PRIMARY`/`SUCCESS` for debits/credits).
 - Root categories get the status tokens (`ROOT_COLORS` in `src/app/categories.rs`) because those are clearly different hues in every builtin theme (a test checks this); accent tokens repeat in some themes.
 

@@ -4,6 +4,7 @@ use ratatui::{
     widgets::{Block, Borders, Padding, Paragraph},
 };
 
+use super::contrast::readable;
 use crate::app::categories::Categories;
 use crate::app::insights::spending_by_root;
 use crate::app::state::{AppState, TabState};
@@ -54,7 +55,7 @@ pub fn draw_account_header(buf: &mut Buffer, area: Rect, state: &AppState) {
 fn header_lines(tab: &TabState, state: &AppState, width: usize) -> Vec<Line<'static>> {
     let theme = &state.theme;
     let fg = |token| Style::default().fg(theme.color(token).into());
-    let dim = fg(tokens::TEXT_DIM);
+    let dim = Style::default().fg(readable(theme, tokens::TEXT_DIM, tokens::BG_PANEL));
     let account = &tab.account;
 
     let title = vec![

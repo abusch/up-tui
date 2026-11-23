@@ -6,6 +6,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use super::contrast::readable;
 use crate::app::state::AppState;
 use crate::client::models::{MoneyObject, Transaction, TransactionStatus};
 
@@ -56,10 +57,12 @@ fn detail_lines(
 ) -> Vec<Line<'static>> {
     let theme = &state.theme;
     let fg = |token| Style::default().fg(theme.color(token).into());
+    // Dim and muted text on the pane's background.
+    let faint = |token| Style::default().fg(readable(theme, token, tokens::BG_PANEL));
     let mut out = DetailLines {
         lines: Vec::new(),
         width,
-        heading_style: fg(tokens::TEXT_DIM).add_modifier(Modifier::BOLD),
+        heading_style: faint(tokens::TEXT_DIM).add_modifier(Modifier::BOLD),
         label_style: fg(tokens::TEXT_SECONDARY),
         value_style: fg(tokens::TEXT_PRIMARY),
     };
@@ -79,7 +82,7 @@ fn detail_lines(
     if let Some(foreign) = &txn.foreign_amount {
         amount.push(Span::styled(
             format!(" ({})", foreign.format_display_with_code()),
-            fg(tokens::TEXT_MUTED),
+            faint(tokens::TEXT_MUTED),
         ));
     }
     let status = match txn.status {
@@ -182,7 +185,7 @@ fn detail_lines(
     if let Some(raw) = &txn.raw_text
         && !raw.trim().eq_ignore_ascii_case(txn.description.trim())
     {
-        out.text_section("Raw text", raw, fg(tokens::TEXT_MUTED));
+        out.text_section("Raw text", raw, faint(tokens::TEXT_MUTED));
     }
 
     out.lines

@@ -5,6 +5,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use super::contrast::readable;
 use super::transaction_list::truncate_to_width;
 use crate::app::state::AppState;
 use crate::client::models::{Account, MoneyObject};
@@ -57,7 +58,9 @@ pub fn draw_sidebar(buf: &mut Buffer, area: Rect, state: &AppState) {
         .padding(Padding::uniform(1));
     let width = usize::from(block.inner(area).width);
 
-    let heading_style = fg(tokens::TEXT_DIM).add_modifier(Modifier::BOLD);
+    let heading_style = Style::default()
+        .fg(readable(theme, tokens::TEXT_DIM, tokens::BG_PANEL))
+        .add_modifier(Modifier::BOLD);
     let selected_style = Style::default()
         .bg(theme.color(tokens::BG_SELECTION).into())
         .add_modifier(Modifier::BOLD);

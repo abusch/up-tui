@@ -1,4 +1,5 @@
 pub mod account_header;
+pub mod contrast;
 pub mod header_bar;
 pub mod help;
 pub mod insights;
