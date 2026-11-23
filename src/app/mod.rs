@@ -8,6 +8,7 @@ use rootcause::prelude::*;
 use tokio::sync::mpsc;
 
 use crate::app::categories::Categories;
+use crate::app::insights::{spending_by_root, spending_in_root};
 use crate::app::state::{AppMode, Message, MessageKind, TabState, View, recent_since};
 use crate::app::store::{Fetch, LoadKind, PageOutcome};
 use crate::backend::AppTerminal;
@@ -211,8 +212,7 @@ impl App {
             KeyCode::Char('t') => {
                 self.state.mode = AppMode::Theme(ThemeSelectorState::with_current_selected());
             }
-            // The rest act on the transaction list, which isn't shown in Insights.
-            _ if self.state.view != View::Transactions => {}
+            _ if self.state.view == View::Insights => self.handle_insights_key(key),
             KeyCode::Enter => {
                 if self.state.selected_transaction().is_some() {
                     self.state.mode = AppMode::Detail;
@@ -227,6 +227,36 @@ impl App {
         // If navigation brought the selection near the end of what's loaded, fetch more
         // (or retry a failed fetch).
         self.load_tab(self.state.active_tab);
+    }
+
+    /// Normal-mode keys in the Insights view, other than those common to both views:
+    /// they select a root category in the spending list, open or close its breakdown
+    /// by subcategory, and select a subcategory in the breakdown.
+    fn handle_insights_key(&mut self, key: KeyEvent) {
+        let Some(recent) = self.state.current_tab().and_then(|t| t.store.recent()) else {
+            return;
+        };
+        let roots = spending_by_root(recent);
+        let insights = &self.state.insights;
+        let breakdown = match insights.root.row(&roots) {
+            Some(root) if insights.breakdown => {
+                Some(spending_in_root(recent, root.category.as_deref()))
+            }
+            _ => None,
+        };
+        // The list that j/k move in: the breakdown's subcategories, or the roots.
+        let insights = &mut self.state.insights;
+        let (selection, rows) = match breakdown {
+            Some(subcategories) => (&mut insights.subcategory, subcategories),
+            None => (&mut insights.root, roots),
+        };
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => selection.select_next(&rows),
+            KeyCode::Char('k') | KeyCode::Up => selection.select_prev(&rows),
+            KeyCode::Enter if !rows.is_empty() => insights.breakdown = true,
+            KeyCode::Esc | KeyCode::Backspace => insights.breakdown = false,
+            _ => {}
+        }
     }
 
     /// Keys while the detail popup is open: it can be closed, and the navigation keys

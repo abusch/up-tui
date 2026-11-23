@@ -17,15 +17,44 @@ pub struct CategorySpending {
     pub total: i64,
 }
 
-/// Money spent by category: the debits, excluding transfers between the user's own
-/// accounts (including round-ups to savers), largest first. Refunds aren't subtracted.
-pub fn spending_by_category(transactions: &[Transaction]) -> Vec<CategorySpending> {
+/// Money spent by root category (Up's top-level categories, such as Good Life), with
+/// the transactions without a category as `None`. See `spending_by`.
+pub fn spending_by_root(transactions: &[Transaction]) -> Vec<CategorySpending> {
+    spending_by(transactions, |txn| Some(root_category(txn)))
+}
+
+/// Money spent in each category within the root category `root` (`None`: the
+/// transactions without a category, which are a single `None` row). See `spending_by`.
+pub fn spending_in_root(transactions: &[Transaction], root: Option<&str>) -> Vec<CategorySpending> {
+    spending_by(transactions, |txn| {
+        (root_category(txn) == root).then_some(txn.category.as_deref())
+    })
+}
+
+/// The root category a transaction is in: its category's parent, or its category if
+/// that has no parent (Up's categories are two levels deep). This comes with the
+/// transaction, so it doesn't depend on the categories having loaded.
+fn root_category(txn: &Transaction) -> Option<&str> {
+    txn.parent_category.as_deref().or(txn.category.as_deref())
+}
+
+/// Money spent, grouped by `group`, which gives a debit's category for the result (or
+/// `None` to leave the debit out): the debits, excluding transfers between the user's
+/// own accounts (including round-ups to savers), largest first. Refunds aren't
+/// subtracted.
+fn spending_by<'a>(
+    transactions: &'a [Transaction],
+    group: impl Fn(&'a Transaction) -> Option<Option<&'a str>>,
+) -> Vec<CategorySpending> {
     let mut totals: HashMap<Option<&str>, i64> = HashMap::new();
     for txn in transactions
         .iter()
         .filter(|t| t.amount.is_negative() && t.transfer_account.is_none())
     {
-        let total = totals.entry(txn.category.as_deref()).or_default();
+        let Some(category) = group(txn) else {
+            continue;
+        };
+        let total = totals.entry(category).or_default();
         *total = total.saturating_sub(txn.amount.value_in_base_units);
     }
     let mut spending: Vec<_> = totals
@@ -90,32 +119,69 @@ mod tests {
         }
     }
 
-    #[test]
-    fn spending_counts_debits_by_category_without_transfers() {
-        let mut transfer = spent("t", "2026-11-20T10:00:00Z", -50000, None);
-        transfer.transfer_account = Some("saver".to_string());
-        let transactions = [
-            spent("a", "2026-11-20T10:00:00Z", -1250, Some("groceries")),
-            spent("b", "2026-11-19T10:00:00Z", -3000, Some("restaurants")),
-            spent("c", "2026-11-18T10:00:00Z", -2000, Some("groceries")),
-            spent("d", "2026-11-18T10:00:00Z", -500, None),
-            // A refund and a salary: not spending.
-            spent("e", "2026-11-17T10:00:00Z", 1000, Some("groceries")),
-            spent("f", "2026-11-17T10:00:00Z", 400000, None),
-            transfer,
-        ];
-        let category = |c: Option<&str>, total| CategorySpending {
+    /// A debit in `category`, a child of `parent`.
+    fn spent_in(id: &str, cents: i64, category: &str, parent: &str) -> Transaction {
+        Transaction {
+            parent_category: Some(parent.to_owned()),
+            ..spent(id, "2026-11-20T10:00:00Z", cents, Some(category))
+        }
+    }
+
+    fn category(c: Option<&str>, total: i64) -> CategorySpending {
+        CategorySpending {
             category: c.map(str::to_owned),
             total,
-        };
+        }
+    }
+
+    fn transactions() -> Vec<Transaction> {
+        let mut transfer = spent("t", "2026-11-20T10:00:00Z", -50000, None);
+        transfer.transfer_account = Some("saver".to_string());
+        vec![
+            spent_in("a", -1250, "groceries", "home"),
+            spent_in("b", -3000, "restaurants", "good-life"),
+            spent_in("c", -2000, "groceries", "home"),
+            spent_in("d", -1500, "takeaway", "good-life"),
+            spent_in("e", -900, "rent", "home"),
+            spent("f", "2026-11-18T10:00:00Z", -500, None),
+            // A category without a parent is its own root.
+            spent("g", "2026-11-18T10:00:00Z", -300, Some("personal")),
+            // A refund and a salary: not spending.
+            spent_in("h", 1000, "groceries", "home"),
+            spent("i", "2026-11-17T10:00:00Z", 400000, None),
+            transfer,
+        ]
+    }
+
+    #[test]
+    fn spending_counts_debits_by_root_category_without_transfers() {
         assert_eq!(
-            spending_by_category(&transactions),
+            spending_by_root(&transactions()),
             [
-                category(Some("groceries"), 3250),
-                category(Some("restaurants"), 3000),
+                category(Some("good-life"), 4500),
+                category(Some("home"), 4150),
                 category(None, 500),
+                category(Some("personal"), 300),
             ]
         );
+    }
+
+    #[test]
+    fn spending_in_a_root_category_is_by_subcategory() {
+        let transactions = transactions();
+        assert_eq!(
+            spending_in_root(&transactions, Some("home")),
+            [
+                category(Some("groceries"), 3250),
+                category(Some("rent"), 900),
+            ]
+        );
+        assert_eq!(
+            spending_in_root(&transactions, Some("personal")),
+            [category(Some("personal"), 300)]
+        );
+        assert_eq!(spending_in_root(&transactions, None), [category(None, 500)]);
+        assert_eq!(spending_in_root(&transactions, Some("transport")), []);
     }
 
     #[test]

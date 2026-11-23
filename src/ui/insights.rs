@@ -8,12 +8,16 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use super::transaction_list::truncate_to_width;
-use crate::app::insights::{CategorySpending, daily_balances, spending_by_category};
+use crate::app::insights::{CategorySpending, daily_balances, spending_by_root, spending_in_root};
 use crate::app::state::{AppState, RECENT_DAYS, TabState};
 use crate::client::models::MoneyObject;
 
 /// Partial blocks for the fractional end of a bar, in eighths (index 1 is ⅛).
 const PARTIAL_BLOCKS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
+/// Drawn before the selected category, like the transaction list's selection
+/// marker. Other rows are indented by the same width.
+const MARKER: &str = "▎ ";
+const MARKER_WIDTH: usize = 2;
 /// Maximum width of the category name column.
 const MAX_NAME_WIDTH: usize = 24;
 /// Width of the percentage column ("100%").
@@ -28,7 +32,8 @@ const MIN_CATEGORY_HEIGHT: u16 = 3;
 const MIN_BALANCE_HEIGHT: u16 = 6;
 
 /// The Insights view for the selected account, in place of the transaction list:
-/// the balance over the recent period at the top, then spending by category.
+/// the balance over the recent period at the top, then spending by root category, or
+/// the selected root category's breakdown by subcategory.
 pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
     let theme = &state.theme;
     let fg = |token| Style::default().fg(theme.color(token).into());
@@ -66,15 +71,40 @@ pub fn draw_insights(buf: &mut Buffer, area: Rect, state: &AppState) {
             .areas(inner);
     draw_balance_chart(buf, balance_area, tab, state);
 
-    let spending = spending_by_category(recent);
-    let categories = category_lines(
-        &spending,
+    let roots = spending_by_root(recent);
+    let insights = &state.insights;
+    let section = match insights.root.row(&roots) {
+        Some(root) if insights.breakdown => {
+            let spending = spending_in_root(recent, root.category.as_deref());
+            let name = category_name(root.category.as_deref(), state);
+            CategorySection {
+                heading: format!("Spending on {name}"),
+                selected: insights.subcategory.index(&spending),
+                footer: format!(
+                    "{} spent on {name}, {} of all spending",
+                    money(tab, root.total),
+                    percent(root.total, total_of(&roots))
+                ),
+                spending,
+            }
+        }
+        _ => CategorySection {
+            heading: "Spending by category".to_string(),
+            selected: insights.root.index(&roots),
+            footer: format!(
+                "{} spent, not counting transfers between your accounts",
+                money(tab, total_of(&roots))
+            ),
+            spending: roots,
+        },
+    };
+    let lines = section.lines(
         tab,
         state,
         usize::from(inner.width),
         usize::from(category_area.height),
     );
-    Paragraph::new(categories).render(category_area, buf);
+    Paragraph::new(lines).render(category_area, buf);
 }
 
 /// A section heading filled to `width`, like the detail pane's.
@@ -86,99 +116,163 @@ fn heading(title: &str, width: usize, state: &AppState) -> Line<'static> {
     Line::styled(format!("{title:┄<width$}"), style)
 }
 
-/// The spending by category section: a heading, a bar per category (at most
-/// `max_lines` lines in all, the smallest categories grouped as "Other"), and the
-/// total.
-fn category_lines(
-    spending: &[CategorySpending],
+/// A category's display name, or "Uncategorised" for `None`.
+fn category_name(category: Option<&str>, state: &AppState) -> String {
+    match category {
+        Some(id) => state.category_name(id).to_string(),
+        None => "Uncategorised".to_string(),
+    }
+}
+
+/// A row of the category list: the name, the bar's colour (its root category's) and
+/// the amount, in base units.
+struct Row {
+    name: String,
+    color: Color,
+    amount: i64,
+}
+
+impl Row {
+    fn new(spending: &CategorySpending, state: &AppState) -> Self {
+        let category = spending.category.as_deref();
+        Row {
+            name: category_name(category, state),
+            color: state.category_color(category),
+            amount: spending.total,
+        }
+    }
+}
+
+/// A list of categories' spending: the spending by root category, or a root
+/// category's breakdown by subcategory.
+struct CategorySection {
+    heading: String,
+    /// The categories, largest first.
+    spending: Vec<CategorySpending>,
+    /// The index of the selected category in `spending`.
+    selected: Option<usize>,
+    /// The line below the list, with its total.
+    footer: String,
+}
+
+impl CategorySection {
+    /// The section's lines: the heading, a bar per category with the selected one
+    /// highlighted, and the footer, in at most `max_lines` lines. If the categories
+    /// don't all fit, the list scrolls to show the selected one.
+    fn lines(
+        &self,
+        tab: &TabState,
+        state: &AppState,
+        width: usize,
+        max_lines: usize,
+    ) -> Vec<Line<'static>> {
+        let mut lines = vec![heading(&self.heading, width, state)];
+        let total = total_of(&self.spending);
+        if total == 0 {
+            lines.push(Line::styled("No spending in this period.", dim(state)));
+            return lines;
+        }
+
+        let rows: Vec<Row> = self.spending.iter().map(|c| Row::new(c, state)).collect();
+        let mut bars = bar_lines(&rows, total, self.selected, tab, state, width);
+        // Leave room for the heading and the footer, and keep the selection in view
+        // (at the bottom when scrolled).
+        let max_rows = max_lines.saturating_sub(2).max(1);
+        let first = self.selected.unwrap_or(0).saturating_sub(max_rows - 1);
+        bars.truncate(first + max_rows);
+        lines.extend(bars.drain(first..));
+        lines.push(Line::styled(self.footer.clone(), dim(state)));
+        lines
+    }
+}
+
+/// The total of `spending`, in base units.
+fn total_of(spending: &[CategorySpending]) -> i64 {
+    spending
+        .iter()
+        .fold(0, |sum, c| sum.saturating_add(c.total))
+}
+
+/// `base_units` in the account's currency, e.g. "$12.50".
+fn money(tab: &TabState, base_units: i64) -> String {
+    tab.account
+        .balance
+        .with_base_units(base_units)
+        .map(|m| m.format_unsigned())
+        .unwrap_or_default()
+}
+
+fn dim(state: &AppState) -> Style {
+    Style::default().fg(state.theme.color(tokens::TEXT_DIM).into())
+}
+
+/// A line per row: a marker column (with the marker on the `selected` row, which is
+/// highlighted), the name, a bar relative to the largest amount, the amount, and its
+/// share of `total`. The lines fill `width`, so the highlight covers the whole row.
+fn bar_lines(
+    rows: &[Row],
+    total: i64,
+    selected: Option<usize>,
     tab: &TabState,
     state: &AppState,
     width: usize,
-    max_lines: usize,
 ) -> Vec<Line<'static>> {
     let theme = &state.theme;
     let fg = |token| Style::default().fg(theme.color(token).into());
-    let dim = fg(tokens::TEXT_DIM);
-    let mut lines = vec![heading("Spending by category", width, state)];
+    let selected_style = Style::default()
+        .bg(theme.color(tokens::BG_SELECTION).into())
+        .add_modifier(Modifier::BOLD);
 
-    let total: i64 = spending
-        .iter()
-        .fold(0, |sum, c| sum.saturating_add(c.total));
-    if total == 0 {
-        lines.push(Line::styled("No spending in this period.", dim));
-        return lines;
-    }
-
-    // Heading and total lines, plus one row per category.
-    let max_rows = max_lines.saturating_sub(2).max(1);
-    // Each row: the name, the bar's colour (its root category's) and the amount.
-    let mut rows: Vec<(String, Color, i64)> = spending
-        .iter()
-        .map(|c| {
-            let name = match &c.category {
-                Some(id) => state.category_name(id).to_string(),
-                None => "Uncategorised".to_string(),
-            };
-            (name, state.category_color(c.category.as_deref()), c.total)
-        })
-        .collect();
-    if rows.len() > max_rows {
-        let other = rows
-            .split_off(max_rows - 1)
-            .iter()
-            .fold(0i64, |sum, (_, _, t)| sum.saturating_add(*t));
-        rows.push(("Other".to_string(), state.category_color(None), other));
-    }
-
-    let money = |base_units: i64| {
-        tab.account
-            .balance
-            .with_base_units(base_units)
-            .map(|m| m.format_unsigned())
-            .unwrap_or_default()
-    };
-    let amounts: Vec<String> = rows.iter().map(|&(_, _, t)| money(t)).collect();
+    let amounts: Vec<String> = rows.iter().map(|row| money(tab, row.amount)).collect();
     let amount_width = amounts.iter().map(|a| a.width()).max().unwrap_or(0);
     let name_width = rows
         .iter()
-        .map(|(name, _, _)| name.width())
+        .map(|row| row.name.width())
         .max()
         .unwrap_or(0)
         .min(MAX_NAME_WIDTH)
         .min(width / 3);
-    // Name, gap, bar, gap, amount, gap, percentage.
-    let bar_width = width.saturating_sub(name_width + 2 + 1 + amount_width + 2 + PERCENT_WIDTH);
-    let largest = rows.iter().map(|&(_, _, t)| t).max().unwrap_or(1).max(1);
+    // Marker, name, gap, bar, gap, amount, gap, percentage.
+    let bar_width =
+        width.saturating_sub(MARKER_WIDTH + name_width + 2 + 1 + amount_width + 2 + PERCENT_WIDTH);
+    let largest = rows.iter().map(|row| row.amount).max().unwrap_or(1).max(1);
 
-    for ((name, color, amount), formatted) in rows.iter().zip(&amounts) {
-        let name = truncate_to_width(name, name_width);
-        let name_padding = name_width.saturating_sub(name.width());
-        let bar = bar(*amount, largest, bar_width);
-        let bar_padding = bar_width.saturating_sub(bar.width());
-        lines.push(Line::from(vec![
-            Span::styled(name, fg(tokens::TEXT_PRIMARY)),
-            Span::raw(" ".repeat(name_padding + 2)),
-            Span::styled(bar, Style::default().fg(*color)),
-            Span::raw(" ".repeat(bar_padding + 1)),
-            Span::styled(
-                format!("{formatted:>amount_width$}"),
-                fg(tokens::TEXT_PRIMARY),
-            ),
-            Span::styled(
-                format!("  {:>PERCENT_WIDTH$}", percent(*amount, total)),
-                dim,
-            ),
-        ]));
-    }
-
-    lines.push(Line::styled(
-        format!(
-            "{} spent, not counting transfers between your accounts",
-            money(total)
-        ),
-        dim,
-    ));
-    lines
+    rows.iter()
+        .zip(&amounts)
+        .enumerate()
+        .map(|(i, (row, formatted))| {
+            let name = truncate_to_width(&row.name, name_width);
+            let name_padding = name_width.saturating_sub(name.width());
+            let bar = bar(row.amount, largest, bar_width);
+            let bar_padding = bar_width.saturating_sub(bar.width());
+            let is_selected = selected == Some(i);
+            let marker = if is_selected {
+                Span::styled(MARKER, fg(tokens::ACCENT_PRIMARY))
+            } else {
+                Span::raw(" ".repeat(MARKER_WIDTH))
+            };
+            let line = Line::from(vec![
+                marker,
+                Span::styled(name, fg(tokens::TEXT_PRIMARY)),
+                Span::raw(" ".repeat(name_padding + 2)),
+                Span::styled(bar, Style::default().fg(row.color)),
+                Span::raw(" ".repeat(bar_padding + 1)),
+                Span::styled(
+                    format!("{formatted:>amount_width$}"),
+                    fg(tokens::TEXT_PRIMARY),
+                ),
+                Span::styled(
+                    format!("  {:>PERCENT_WIDTH$}", percent(row.amount, total)),
+                    fg(tokens::TEXT_DIM),
+                ),
+            ]);
+            if is_selected {
+                line.style(selected_style)
+            } else {
+                line
+            }
+        })
+        .collect()
 }
 
 /// A bar for `value` out of `largest`, at most `width` columns, in eighths of a column.
@@ -401,36 +495,52 @@ mod tests {
         assert_eq!(percent(1, 1000), "<1%");
     }
 
-    #[test]
-    fn categories_are_listed_with_bars_amounts_and_shares() {
+    fn categories_state() -> AppState {
         let mut state = state();
         state.categories = Categories::new([
             named("good-life", "Good Life", None),
             named("home", "Home", None),
             named("groceries", "Groceries", Some("home")),
-            named("restaurants", "Restaurants & Cafes", Some("good-life")),
+            named("rent", "Rent & Mortgage", Some("home")),
+            named("utilities", "Utilities", Some("home")),
+            named("internet", "Internet", Some("home")),
         ]);
+        state
+    }
+
+    fn section(spending: Vec<CategorySpending>, selected: Option<usize>) -> CategorySection {
+        CategorySection {
+            heading: "Spending by category".to_string(),
+            spending,
+            selected,
+            footer: "Footer".to_string(),
+        }
+    }
+
+    #[test]
+    fn categories_are_listed_with_bars_amounts_and_shares() {
+        let state = categories_state();
         let tab = TabState::new(account("a", 0));
-        let spending = [
-            spent(Some("groceries"), 41230),
-            spent(Some("restaurants"), 20615),
+        let spending = vec![
+            spent(Some("home"), 41230),
+            spent(Some("good-life"), 20615),
             spent(None, 8000),
         ];
-        let lines = category_lines(&spending, &tab, &state, 60, 10);
+        let lines = section(spending, Some(1)).lines(&tab, &state, 60, 10);
         assert_eq!(
             text(&lines),
             [
                 "SPENDING BY CATEGORY ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄",
-                "Groceries            █████████████████████████ $412.30   59%",
-                "Restaurants & Cafes  ████████████▌             $206.15   30%",
-                "Uncategorised        ████▊                      $80.00   11%",
-                "$698.45 spent, not counting transfers between your accounts",
+                "  Home           █████████████████████████████ $412.30   59%",
+                "▎ Good Life      ██████████████▌               $206.15   30%",
+                "  Uncategorised  █████▋                         $80.00   11%",
+                "Footer",
             ]
         );
 
         // The bars are in their root category's colour, and muted without a category.
         let color = |token| Some(state.theme.color(token).into());
-        let bar_colors: Vec<_> = lines[1..4].iter().map(|l| l.spans[2].style.fg).collect();
+        let bar_colors: Vec<_> = lines[1..4].iter().map(|l| l.spans[3].style.fg).collect();
         assert_eq!(
             bar_colors,
             [
@@ -439,28 +549,44 @@ mod tests {
                 color(tokens::TEXT_MUTED),
             ]
         );
+        // Only the selected row is highlighted.
+        let selection = Some(state.theme.color(tokens::BG_SELECTION).into());
+        let backgrounds: Vec<_> = lines[1..4].iter().map(|l| l.style.bg).collect();
+        assert_eq!(backgrounds, [None, selection, None]);
     }
 
     #[test]
-    fn small_categories_are_grouped_when_there_is_no_room() {
-        let state = state();
+    fn the_list_scrolls_to_the_selection_when_there_is_no_room() {
+        let state = categories_state();
         let tab = TabState::new(account("a", 0));
-        let spending = [
-            spent(Some("a"), 5000),
-            spent(Some("b"), 3000),
-            spent(Some("c"), 1500),
-            spent(Some("d"), 500),
+        let spending = vec![
+            spent(Some("rent"), 5000),
+            spent(Some("groceries"), 3000),
+            spent(Some("utilities"), 1500),
+            spent(Some("internet"), 500),
         ];
-        // Heading, 2 rows, total.
-        let lines = text(&category_lines(&spending, &tab, &state, 40, 4));
-        assert_eq!(lines.len(), 4);
-        assert!(lines[1].starts_with("a "));
-        assert!(lines[2].starts_with("Other ") && lines[2].contains("$50.00"));
+        // Heading, 2 rows, footer.
+        let names = |selected| {
+            let lines = text(&section(spending.clone(), selected).lines(&tab, &state, 50, 4));
+            assert_eq!(lines.len(), 4);
+            assert_eq!(lines[3], "Footer");
+            [lines[1].clone(), lines[2].clone()].map(|l| {
+                l.trim_start_matches(['▎', ' '])
+                    .split("  ")
+                    .next()
+                    .unwrap()
+                    .to_string()
+            })
+        };
+        assert_eq!(names(Some(0)), ["Rent & Mortgage", "Groceries"]);
+        assert_eq!(names(Some(1)), ["Rent & Mortgage", "Groceries"]);
+        assert_eq!(names(Some(2)), ["Groceries", "Utilities"]);
+        assert_eq!(names(Some(3)), ["Utilities", "Internet"]);
     }
 
     #[test]
     fn no_spending() {
-        let lines = category_lines(&[], &TabState::new(account("a", 0)), &state(), 40, 10);
+        let lines = section(vec![], None).lines(&TabState::new(account("a", 0)), &state(), 40, 10);
         assert_eq!(text(&lines)[1], "No spending in this period.");
     }
 

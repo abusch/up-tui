@@ -758,12 +758,15 @@ mod tests {
     use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
 
     use super::*;
+    use crate::app::event::AppEvent;
+    use crate::app::insights::{spending_by_root, spending_in_root};
     use crate::app::{
         App,
         categories::Categories,
         state::{AppMode, View, recent_since},
     };
     use crate::client::Client;
+    use crossterm::event::{KeyCode, KeyEvent};
 
     fn now() -> ZonedDateTime {
         "2026-11-23T15:00:00+11:00[Australia/Sydney]"
@@ -943,6 +946,39 @@ mod tests {
             .join("\n")
     }
 
+    /// Some keys pressed in the app.
+    fn press(app: &mut App, keys: &[KeyCode]) {
+        for &key in keys {
+            app.handle_event(AppEvent::Key(KeyEvent::from(key)));
+        }
+    }
+
+    // A tokio test, as keys may start fetches.
+    #[tokio::test]
+    async fn insights_keys_select_categories_and_subcategories() {
+        let mut app = demo_app(&now());
+        let recent = app.state.tabs[0].store.recent().unwrap().to_vec();
+        let roots = spending_by_root(&recent);
+        let selected_root = |app: &App| app.state.insights.root.row(&roots).cloned();
+        press(&mut app, &[KeyCode::Char('i'), KeyCode::Char('j')]);
+        assert_eq!(selected_root(&app).as_ref(), roots.get(1));
+
+        // In the breakdown, j/k move between the root category's subcategories.
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(app.state.insights.breakdown);
+        let subcategories = spending_in_root(&recent, roots[1].category.as_deref());
+        assert!(subcategories.len() > 1);
+        press(&mut app, &[KeyCode::Char('j')]);
+        let subcategory = app.state.insights.subcategory.row(&subcategories);
+        assert_eq!(subcategory, subcategories.get(1));
+        assert_eq!(selected_root(&app).as_ref(), roots.get(1));
+
+        // Esc goes back to the root categories, where j/k move again.
+        press(&mut app, &[KeyCode::Esc, KeyCode::Char('k')]);
+        assert!(!app.state.insights.breakdown);
+        assert_eq!(selected_root(&app).as_ref(), roots.first());
+    }
+
     #[test]
     fn the_app_shows_the_demo_data_in_every_view() {
         let mut app = demo_app(&now());
@@ -956,6 +992,9 @@ mod tests {
             screens.push(render(&mut app, 120, 40));
             app.state.mode = AppMode::Normal;
             app.state.view = View::Insights;
+            app.state.insights.breakdown = false;
+            screens.push(render(&mut app, 120, 40));
+            app.state.insights.breakdown = true;
             screens.push(render(&mut app, 120, 40));
         }
         let all = screens.join("\n");

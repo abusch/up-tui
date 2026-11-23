@@ -62,6 +62,7 @@ Event handling (`handle_event`, `handle_key`, …) is synchronous. **The main lo
 - `show_detail` — whether the detail pane is visible
 - `show_sidebar` — whether the account sidebar is visible (it is by default)
 - `view` — `View::Transactions` (the transaction list and detail pane) or `View::Insights`; toggled with `i`, and kept when switching accounts
+- `insights` — `InsightsState`: the root category selected in the Insights view, whether its breakdown is shown, and the subcategory selected in the breakdown. Each selection is a `CategorySelection`, which stores the category's id, so it stays on the same category when the order changes or when switching accounts (and is the first row if that category isn't in the list)
 - `message` — the status message shown in the header bar (`Message`: its text and `MessageKind`, `Info`, `Success` or `Error`), if any
 - `page_size` — how many transactions fit in the list view (computed from the list block's inner area, 2 rows per item); written during rendering and used for `Ctrl+D`/`Ctrl+U` and for deciding when to fetch the next page
 
@@ -102,7 +103,10 @@ The account header (`src/ui/account_header.rs`) sits above the transaction list 
 The Insights view (`src/ui/insights.rs`) replaces the transaction list and detail pane below the header when `view` is `View::Insights`. It's computed from the store's `recent()` transactions (the same 30 days as the header's totals), with the statistics in `src/app/insights.rs` as pure, unit-tested functions:
 
 - **Balance** (`daily_balances()`), at the top: the balance at the end of each day, worked backwards from the current balance through the recent transactions, drawn as a ratatui `Chart` (Braille line) with the first, middle and last dates. The vertical axis (`YAxis`) always includes zero, so the line's height is in proportion to the balance rather than exaggerating small changes, and is rounded out to multiples of a round step (1, 2 or 5 × a power of ten, at least one whole currency unit), which label it as whole amounts ("$2000"). The section has a fixed height (`BALANCE_HEIGHT`), so the chart is the same size for every account; on a short screen it shrinks to leave room for the categories, and is left out below `MIN_BALANCE_HEIGHT`.
-- **Spending by category** (`spending_by_category()`), below it: the debits, excluding transfers between the user's own accounts (`transfer_account` is set), summed per category (`None` is shown as "Uncategorised"), largest first; refunds aren't subtracted. Each category is a row with a bar (in eighths of a column, relative to the largest) in its category's colour (see Theming), the amount and its share. The list gets the space left by the balance section; if the categories don't fit, the smallest are grouped as "Other".
+- **Spending by category** (`spending_by_root()`), below it: the debits, excluding transfers between the user's own accounts (`transfer_account` is set), summed per root category (the transaction's `parent_category`, or its `category` if it has none, so it doesn't depend on the categories having loaded; `None` is shown as "Uncategorised"), largest first; refunds aren't subtracted. Each category is a row with a bar (in eighths of a column, relative to the largest) in its category's colour (see Theming), the amount and its share. One row is selected (marked and highlighted like the selected transaction); `j`/`k` move the selection.
+- **Breakdown** (`spending_in_root()`), in place of the list when `insights.breakdown` is set (`Enter`; `Esc` goes back): the selected root category's spending by subcategory, drawn the same way, with its total and share of all spending. `j`/`k` select a subcategory.
+
+Both lists are drawn by `CategorySection` and get the space left by the balance section. If the rows don't fit, the list scrolls to keep the selection in view (rows aren't grouped into an "Other" row, since every row can be selected).
 
 While `recent()` isn't loaded, the view shows "Loading…", or a message to press `r` if loading failed.
 
@@ -127,7 +131,7 @@ src/
     state.rs           AppState, AppMode, View, TabState
     store.rs           TransactionStore: an account's transactions, paging, refresh
     categories.rs      Categories: names, parents, and the root categories' colour tokens
-    insights.rs        Statistics for the Insights view (spending by category, daily balances)
+    insights.rs        Statistics for the Insights view (spending by root category and subcategory, daily balances)
     event.rs           AppEvent enum, crossterm event reader task
 
   ui/
@@ -135,7 +139,7 @@ src/
     sidebar.rs         Account sidebar: accounts grouped by type, balances, total
     header_bar.rs      Header bar: app name and version, status messages
     account_header.rs  Selected account's name, type, balance and 30-day totals
-    insights.rs        Insights view: spending by category bars, balance chart
+    insights.rs        Insights view: spending by category bars and breakdown, balance chart
     transaction_list.rs  Transaction list grouped by day, description truncation
     transaction_detail.rs  Detail pane and popup with full transaction info
     status_bar.rs      Keybinding hints, per mode
@@ -178,6 +182,9 @@ When adding something the UI shows, add it to the demo data too (in `Generator::
 | `o`                 | Normal       | Toggle the detail pane                      |
 | `a`                 | Normal       | Toggle the account sidebar                  |
 | `i`                 | Normal       | Switch between the transaction list and the Insights view |
+| `j`/`k` / `↓`/`↑`   | Insights     | Select a root category (or a subcategory in a breakdown) |
+| `Enter`             | Insights     | Show the selected category's breakdown by subcategory |
+| `Esc` / `Backspace` | Insights     | Back to the list of root categories         |
 | `Esc` / `Enter` / `q` | Detail popup | Close the popup                           |
 | `Ctrl+C`            | Detail popup | Quit                                        |
 | navigation keys     | Detail popup | As in Normal mode (`j`/`k`, `Ctrl+D`/`Ctrl+U`, `g`/`G`, `[`/`]`); the popup shows the newly selected transaction |
@@ -188,7 +195,7 @@ When adding something the UI shows, add it to the demo data too (in `Generator::
 | `Enter`             | Theme picker | Apply the selected theme                    |
 | `Esc`               | Theme picker | Close without changing the theme            |
 
-Key handling lives in `App::handle_key`, which dispatches on the mode to `App::handle_normal_key`, `App::handle_detail_key`, or `ThemeSelectorState::handle_key`. The navigation keys, shared by Normal mode and the detail popup, are in `App::handle_navigation_key`. Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. In the Insights view, the keys that act on the transaction list (navigation, `Enter`, `o`) are ignored. After every Normal-mode or detail-popup key, `load_tab()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` (one list per mode, and for the Insights view) should be kept in sync with the bindings.
+Key handling lives in `App::handle_key`, which dispatches on the mode to `App::handle_normal_key`, `App::handle_detail_key`, or `ThemeSelectorState::handle_key`. The navigation keys, shared by Normal mode and the detail popup, are in `App::handle_navigation_key`. Selection movement is implemented as `TabState` methods (`select_next`, `page_down`, `select_next_day`, …), which keep `selected` in bounds and are unit-tested; the key handler applies them to the active tab via `App::navigate`. In the Insights view, the keys that act on the transaction list are handled by `App::handle_insights_key` instead, which selects root categories or subcategories and opens or closes the breakdown (`InsightsState`). After every Normal-mode or detail-popup key, `load_tab()` checks whether to load more transactions. The status bar hints in `src/ui/status_bar.rs` (one list per mode, and for the Insights view with and without a breakdown) should be kept in sync with the bindings.
 
 ## Theming
 

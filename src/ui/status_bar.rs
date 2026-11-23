@@ -18,9 +18,23 @@ const NORMAL_HINTS: &[(&str, &str)] = &[
     ("q", "quit"),
 ];
 
-/// Key hints in the Insights view, which has no transaction list.
+/// Key hints in the Insights view, listing spending by root category.
 const INSIGHTS_HINTS: &[(&str, &str)] = &[
     ("h/l", "account"),
+    ("j/k", "category"),
+    ("Enter", "breakdown"),
+    ("i", "transactions"),
+    ("a", "sidebar"),
+    ("r", "refresh"),
+    ("t", "theme"),
+    ("q", "quit"),
+];
+
+/// Key hints in the Insights view, showing a root category's breakdown.
+const BREAKDOWN_HINTS: &[(&str, &str)] = &[
+    ("h/l", "account"),
+    ("j/k", "subcategory"),
+    ("Esc", "back"),
     ("i", "transactions"),
     ("a", "sidebar"),
     ("r", "refresh"),
@@ -43,6 +57,7 @@ pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
         AppMode::Detail => DETAIL_HINTS,
         AppMode::Normal | AppMode::Theme(_) => match state.view {
             View::Transactions => NORMAL_HINTS,
+            View::Insights if state.insights.breakdown => BREAKDOWN_HINTS,
             View::Insights => INSIGHTS_HINTS,
         },
     };

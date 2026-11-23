@@ -8,6 +8,7 @@ use ratatui::style::Color;
 use ratatui::widgets::ListState;
 
 use crate::app::categories::Categories;
+use crate::app::insights::CategorySpending;
 use crate::app::store::{PageOutcome, TransactionStore};
 use crate::client::models::{Account, MoneyObject, PaginatedResponse, Transaction};
 
@@ -46,6 +47,63 @@ pub enum View {
     Transactions,
     /// Statistics over the recent period.
     Insights,
+}
+
+/// The Insights view's state: which root category is selected in its spending list,
+/// whether that category's breakdown by subcategory is shown instead of the list, and
+/// which subcategory is selected in it. It's kept when switching accounts.
+#[derive(Debug, Default)]
+pub struct InsightsState {
+    /// The selected row of the spending by root category (`spending_by_root`).
+    pub root: CategorySelection,
+    /// The selected row of the breakdown (`spending_in_root`).
+    pub subcategory: CategorySelection,
+    /// Whether the selected root category's breakdown is shown.
+    pub breakdown: bool,
+}
+
+/// The selected row of a list of categories' spending, by category id, so it stays on
+/// the same category when the order changes (after a refresh, or in another account).
+#[derive(Debug, Default)]
+pub struct CategorySelection {
+    /// The selected category's id (the inner `None` is uncategorised spending).
+    /// `None`, or a category that isn't in the list, selects the first row.
+    selected: Option<Option<String>>,
+}
+
+impl CategorySelection {
+    /// The index of the selected row in `rows`, if there are any.
+    pub fn index(&self, rows: &[CategorySpending]) -> Option<usize> {
+        if rows.is_empty() {
+            return None;
+        }
+        let index = self
+            .selected
+            .as_ref()
+            .and_then(|selected| rows.iter().position(|r| &r.category == selected));
+        Some(index.unwrap_or(0))
+    }
+
+    /// The selected row in `rows`, if there are any.
+    pub fn row<'a>(&self, rows: &'a [CategorySpending]) -> Option<&'a CategorySpending> {
+        rows.get(self.index(rows)?)
+    }
+
+    pub fn select_next(&mut self, rows: &[CategorySpending]) {
+        if let Some(i) = self.index(rows) {
+            self.select(rows, (i + 1).min(rows.len() - 1));
+        }
+    }
+
+    pub fn select_prev(&mut self, rows: &[CategorySpending]) {
+        if let Some(i) = self.index(rows) {
+            self.select(rows, i.saturating_sub(1));
+        }
+    }
+
+    fn select(&mut self, rows: &[CategorySpending], index: usize) {
+        self.selected = Some(rows[index].category.clone());
+    }
 }
 
 pub enum AppMode {
@@ -226,6 +284,7 @@ pub struct AppState {
     pub show_sidebar: bool,
     /// What the main area shows. It stays the same when switching accounts.
     pub view: View,
+    pub insights: InsightsState,
     /// Number of transactions that fit in the list view; updated during rendering.
     pub page_size: usize,
     /// The message shown in the header bar, until it expires (see `App::show_message`).
@@ -254,6 +313,7 @@ impl AppState {
             show_detail: false,
             show_sidebar: true,
             view: View::Transactions,
+            insights: InsightsState::default(),
             page_size: 0,
             message: None,
         }
@@ -523,6 +583,33 @@ pub(crate) mod tests {
 
     pub fn state() -> AppState {
         AppState::new(None)
+    }
+
+    #[test]
+    fn category_selection_follows_the_category() {
+        let row = |id: Option<&str>| CategorySpending {
+            category: id.map(str::to_owned),
+            total: 1,
+        };
+        let rows = [row(Some("a")), row(None), row(Some("c"))];
+        let mut selection = CategorySelection::default();
+        assert_eq!(selection.index(&rows), Some(0));
+        selection.select_prev(&rows);
+        assert_eq!(selection.index(&rows), Some(0));
+        selection.select_next(&rows);
+        assert_eq!(selection.row(&rows), Some(&row(None)));
+        selection.select_next(&rows);
+        selection.select_next(&rows);
+        assert_eq!(selection.index(&rows), Some(2));
+
+        // When the order changes (another account, or a refresh), the same category
+        // stays selected, or the first row if it isn't there.
+        let reordered = [row(Some("c")), row(Some("a"))];
+        assert_eq!(selection.index(&reordered), Some(0));
+        selection.select_next(&reordered);
+        assert_eq!(selection.row(&reordered), Some(&row(Some("a"))));
+        assert_eq!(selection.index(&[row(Some("x"))]), Some(0));
+        assert_eq!(selection.index(&[]), None);
     }
 
     #[test]
