@@ -33,6 +33,27 @@ fn right_aligned(
     }
 }
 
+/// Minimum width of the detail pane, including its border and padding.
+const DETAIL_MIN_WIDTH: u16 = 40;
+/// Minimum width of the transaction list beside the detail pane, including its padding.
+const LIST_MIN_WIDTH: u16 = 36;
+
+/// Split `main` into the transaction list (left) and the detail pane (right), or give
+/// it all to the pane (with no list) if they don't both fit at their minimum widths.
+///
+/// The pane takes a third of the screen's width (`screen_width`), not of what the
+/// sidebar leaves, so that it stays wide enough to read; the list gets the rest,
+/// including its right padding, which separates it from the pane's border.
+fn split_list_and_detail(main: Rect, screen_width: u16) -> (Option<Rect>, Rect) {
+    let detail_width = (screen_width / 3).max(DETAIL_MIN_WIDTH);
+    if main.width < detail_width.saturating_add(LIST_MIN_WIDTH) {
+        return (None, main);
+    }
+    let [list, detail] =
+        Layout::horizontal([Constraint::Fill(1), Constraint::Length(detail_width)]).areas(main);
+    (Some(list), detail)
+}
+
 impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let bg = self.state.theme.color(tokens::BG_BASE).into();
@@ -81,25 +102,23 @@ impl Widget for &mut App {
         if self.state.view == View::Insights {
             insights::draw_insights(buf, main, &self.state);
         } else if self.state.show_detail {
-            // Split the rest horizontally: transaction list (left) + detail pane (right).
-            // The pane takes a third of the screen's width, not of what the sidebar
-            // leaves, so that it stays wide enough to read; the list gets the rest,
-            // including its right padding, which separates it from the pane's border.
-            let [list, detail] =
-                Layout::horizontal([Constraint::Fill(1), Constraint::Length(area.width / 3)])
-                    .areas(main);
-
-            transaction_list::draw_transaction_list(buf, list, &mut self.state);
-            transaction_detail::draw_detail_pane(buf, detail, &self.state);
+            match split_list_and_detail(main, area.width) {
+                (Some(list), detail) => {
+                    transaction_list::draw_transaction_list(buf, list, &mut self.state);
+                    transaction_detail::draw_detail_pane(buf, detail, &self.state, true);
+                }
+                (None, detail) => {
+                    // The list isn't drawn, but j/k still move through it (and paging
+                    // and loading more depend on how many transactions it would show).
+                    self.state.page_size = transaction_list::page_size(main);
+                    transaction_detail::draw_detail_pane(buf, detail, &self.state, false);
+                }
+            }
         } else {
             transaction_list::draw_transaction_list(buf, main, &mut self.state);
         }
 
         status_bar::draw_status_bar(buf, status, &self.state);
-
-        if let AppMode::Detail = self.state.mode {
-            transaction_detail::draw_detail_popup(buf, area, &self.state);
-        }
 
         if let AppMode::Theme(ref mut state) = self.state.mode {
             let centered_area = area.centered(Constraint::Ratio(2, 3), Constraint::Ratio(3, 4));
@@ -113,5 +132,38 @@ impl Widget for &mut App {
                 .title("Theme")
                 .render(centered_area, buf, state);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_detail_pane_takes_a_third_of_the_screen() {
+        let main = Rect::new(30, 2, 120, 30);
+        let (list, detail) = split_list_and_detail(main, 150);
+        assert_eq!(list, Some(Rect::new(30, 2, 70, 30)));
+        assert_eq!(detail, Rect::new(100, 2, 50, 30));
+    }
+
+    #[test]
+    fn the_detail_pane_has_a_minimum_width() {
+        let main = Rect::new(0, 2, 90, 30);
+        let (list, detail) = split_list_and_detail(main, 90);
+        assert_eq!(list, Some(Rect::new(0, 2, 90 - DETAIL_MIN_WIDTH, 30)));
+        assert_eq!(detail.width, DETAIL_MIN_WIDTH);
+    }
+
+    #[test]
+    fn only_the_detail_pane_is_shown_if_the_list_does_not_fit_beside_it() {
+        let width = DETAIL_MIN_WIDTH + LIST_MIN_WIDTH;
+        let main = Rect::new(0, 2, width - 1, 30);
+        assert_eq!(split_list_and_detail(main, width - 1), (None, main));
+        // With the sidebar taking some of the screen.
+        let main = Rect::new(30, 2, width - 1, 30);
+        assert_eq!(split_list_and_detail(main, width + 29), (None, main));
+        let main = Rect::new(0, 2, width, 30);
+        assert!(split_list_and_detail(main, width).0.is_some());
     }
 }

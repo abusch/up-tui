@@ -11,6 +11,18 @@ use crate::app::state::{AppState, RECENT_DAYS};
 use crate::app::store::LoadKind;
 use crate::client::models::{MoneyObject, Transaction};
 
+/// The list's block, without its style.
+fn list_block() -> Block<'static> {
+    Block::default().padding(Padding::uniform(1))
+}
+
+/// How many transactions fit in a list drawn in `area`, for Ctrl+D/Ctrl+U paging and
+/// for deciding when to load the next page. Each transaction item is 2 rows tall; day
+/// separator rows are ignored, so this is an upper bound.
+pub fn page_size(area: Rect) -> usize {
+    usize::from(list_block().inner(area).height / 2)
+}
+
 pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState) {
     let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
     let bg = state.theme.color(tokens::BG_BASE).into();
@@ -18,14 +30,9 @@ pub fn draw_transaction_list(buf: &mut Buffer, area: Rect, state: &mut AppState)
     let selection = state.theme.color(tokens::BG_SELECTION).into();
 
     let base_style = Style::default().fg(fg).bg(bg);
-    // Record how many transactions fit in the list, for Ctrl+D/Ctrl+U paging and for
-    // deciding when to load the next page. Each transaction item is 2 rows tall; day
-    // separator rows are ignored, so this is an upper bound.
-    let mut block = Block::default()
-        .padding(Padding::uniform(1))
-        .style(base_style);
+    let mut block = list_block().style(base_style);
     let inner = block.inner(area);
-    state.page_size = usize::from(inner.height / 2);
+    state.page_size = page_size(area);
 
     // No title, as it's clearly a list of transactions (and the account header names
     // the account), except for the loading status, if any.

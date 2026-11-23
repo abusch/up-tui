@@ -66,8 +66,7 @@ To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`).
 | `Ctrl+D` / `Ctrl+U`    | Page down / up                           |
 | `g` / `G`              | Jump to top / bottom                     |
 | `[` / `]`              | Jump to the day above / below            |
-| `Enter`                | Show the transaction's details in a popup |
-| `o`                    | Toggle the transaction detail pane       |
+| `Enter`                | Toggle the transaction detail pane       |
 | `a`                    | Toggle the account sidebar               |
 | `i`                    | Switch between transactions and Insights |
 | `r`                    | Refresh accounts and transactions        |
@@ -76,6 +75,6 @@ To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`).
 
 In the Insights view, `j` / `k` select a category, `Enter` shows its breakdown by subcategory (where `j` / `k` select a subcategory), and `Esc` goes back to the list of categories. `Enter` on a subcategory shows its transactions over the last 30 days in the transaction list, with a bar above it saying what it's filtered by; `Esc` goes back to the breakdown.
 
-In the details popup, the navigation keys move to other transactions, and `Esc`, `Enter` or `q` close it.
+If the window is too narrow for the transaction list and the detail pane side by side, the pane is shown in place of the list (the navigation keys still move through the transactions).
 
 In the theme picker, use `Up` / `Down` to move (the whole UI previews the highlighted theme), type to filter, `Enter` to apply the theme, and `Esc` to close without changing it. The chosen theme isn't saved; set `theme` in the config file to make it permanent.

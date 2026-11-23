@@ -2,7 +2,7 @@ use jiff::{Timestamp, civil::Date, tz::TimeZone};
 use opaline::names::tokens;
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Clear, Padding, Paragraph},
+    widgets::{Block, Borders, Padding, Paragraph},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -13,14 +13,22 @@ use crate::client::models::{MoneyObject, Transaction, TransactionStatus};
 /// plus two columns of space before the value.
 const LABEL_WIDTH: usize = 10;
 
-pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
+/// Draw the selected transaction's details in `area`, which is `beside_list` if the
+/// transaction list is drawn to its left, or else on its own in place of the list.
+pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState, beside_list: bool) {
     let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
     let bg = state.theme.color(tokens::BG_PANEL).into();
 
     // The left border separates the pane from the list: in some themes `BG_PANEL` is
-    // the same colour as the list's `BG_BASE`.
+    // the same colour as the list's `BG_BASE`. Without the list, it isn't needed (and
+    // would double the sidebar's border).
+    let borders = if beside_list {
+        Borders::LEFT
+    } else {
+        Borders::NONE
+    };
     let block = Block::default()
-        .borders(Borders::LEFT)
+        .borders(borders)
         .border_style(state.theme.color(tokens::BORDER_UNFOCUSED))
         .style(Style::default().fg(fg).bg(bg))
         .padding(Padding::uniform(1));
@@ -36,47 +44,6 @@ pub fn draw_detail_pane(buf: &mut Buffer, area: Rect, state: &AppState) {
     Paragraph::new(detail_lines(txn, state, width, local_today(state)))
         .block(block)
         .render(area, buf);
-}
-
-/// Maximum width of the detail popup, including its border and padding.
-const POPUP_MAX_WIDTH: u16 = 72;
-
-/// Draw the selected transaction's details in a popup centred in `area` (the whole
-/// screen), sized to fit its content. Draws nothing if no transaction is selected.
-pub fn draw_detail_popup(buf: &mut Buffer, area: Rect, state: &AppState) {
-    let Some(txn) = state.selected_transaction() else {
-        return;
-    };
-
-    let fg = state.theme.color(tokens::TEXT_PRIMARY).into();
-    let bg = state.theme.color(tokens::BG_ELEVATED).into();
-    let block = Block::bordered()
-        .title(" Transaction ")
-        .title_style(state.theme.color(tokens::ACCENT_PRIMARY))
-        .border_style(state.theme.color(tokens::BORDER_FOCUSED))
-        .style(Style::default().fg(fg).bg(bg))
-        .padding(Padding::symmetric(2, 1));
-
-    // Leave a margin around the popup so it reads as a popup on small screens.
-    let max_area = area.centered(
-        Constraint::Length(area.width.saturating_sub(4).min(POPUP_MAX_WIDTH)),
-        Constraint::Length(area.height.saturating_sub(2)),
-    );
-    let chrome_height = max_area.height - block.inner(max_area).height;
-    let width = usize::from(block.inner(max_area).width);
-    let lines = detail_lines(txn, state, width, local_today(state));
-    // Shrink to the content; if it's taller than the screen, the end is cut off.
-    let height = u16::try_from(lines.len())
-        .unwrap_or(u16::MAX)
-        .saturating_add(chrome_height)
-        .min(max_area.height);
-    let popup = area.centered(
-        Constraint::Length(max_area.width),
-        Constraint::Length(height),
-    );
-
-    Clear.render(popup, buf);
-    Paragraph::new(lines).block(block).render(popup, buf);
 }
 
 /// The current local date.
@@ -515,49 +482,6 @@ mod tests {
         t.transfer_account = Some("saver".to_string());
         let lines = detail_lines(&t, &state, 30, date("2026-11-20"));
         assert!(text(&lines).contains(&"To        Account saver".to_string()));
-    }
-
-    /// The area covered by the popup's border, found from its corners.
-    fn popup_rect(area: Rect, state: &AppState) -> Rect {
-        let mut buf = Buffer::empty(area);
-        draw_detail_popup(&mut buf, area, state);
-        let find = |symbol| {
-            area.positions()
-                .find(|&pos| buf[pos].symbol() == symbol)
-                .unwrap()
-        };
-        let (top_left, bottom_right) = (find("┌"), find("┘"));
-        Rect::new(
-            top_left.x,
-            top_left.y,
-            bottom_right.x - top_left.x + 1,
-            bottom_right.y - top_left.y + 1,
-        )
-    }
-
-    fn state_with_selected(t: Transaction) -> AppState {
-        let mut state = state();
-        let mut tab = TabState::new(account("a", 0));
-        tab.set_transactions(vec![t]);
-        state.tabs.push(tab);
-        state
-    }
-
-    #[test]
-    fn popup_is_centred_and_fits_its_content() {
-        let state = state_with_selected(txn("t", "2026-11-20T12:30:00Z"));
-        let popup = popup_rect(Rect::new(0, 0, 100, 40), &state);
-        // 5 lines of content (see `minimal_transaction_has_no_empty_sections`), plus
-        // the border and a line of padding above and below.
-        assert_eq!((popup.width, popup.height), (POPUP_MAX_WIDTH, 9));
-        assert_eq!(popup.x, (100 - POPUP_MAX_WIDTH) / 2);
-    }
-
-    #[test]
-    fn popup_is_limited_to_the_screen() {
-        let state = state_with_selected(txn("t", "2026-11-20T12:30:00Z"));
-        let popup = popup_rect(Rect::new(0, 0, 40, 6), &state);
-        assert_eq!(popup, Rect::new(2, 1, 36, 4));
     }
 
     #[test]

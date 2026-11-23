@@ -67,7 +67,7 @@ All errors are `rootcause` reports (`rootcause::Result`); there are no custom er
 
 ## Key Bindings
 
-Bindings are listed in the README. Key handling is in `App::handle_key`, dispatching by mode; navigation shared by Normal mode and the detail popup is in `App::handle_navigation_key`, built on `ListSelection` methods. When changing bindings, keep the README and the status bar hints in `src/ui/status_bar.rs` in sync.
+Bindings are listed in the README. Key handling is in `App::handle_key`, dispatching by mode; transaction list navigation is in `App::handle_navigation_key`, built on `ListSelection` methods. When changing bindings, keep the README and the status bar hints in `src/ui/status_bar.rs` in sync.
 
 ## Dependencies
 

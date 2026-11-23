@@ -763,7 +763,7 @@ mod tests {
     use crate::app::{
         App,
         categories::Categories,
-        state::{AppMode, CategoryFilter, View, recent_since},
+        state::{CategoryFilter, View, recent_since},
     };
     use crate::client::Client;
     use crossterm::event::{KeyCode, KeyEvent};
@@ -1000,6 +1000,19 @@ mod tests {
         assert_eq!(selected_root(&app).as_ref(), roots.first());
     }
 
+    #[tokio::test]
+    async fn enter_toggles_the_detail_pane() {
+        let mut app = demo_app(&now());
+        assert!(!app.state.show_detail);
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(app.state.show_detail);
+        // The navigation keys still move through the list.
+        press(&mut app, &[KeyCode::Char('j')]);
+        assert_eq!(app.state.tabs[0].list.selected, 1);
+        press(&mut app, &[KeyCode::Enter]);
+        assert!(!app.state.show_detail);
+    }
+
     #[test]
     fn the_app_shows_the_demo_data_in_every_view() {
         let mut app = demo_app(&now());
@@ -1009,9 +1022,8 @@ mod tests {
             app.state.view = View::Transactions;
             app.state.show_detail = true;
             screens.push(render(&mut app, 120, 40));
-            app.state.mode = AppMode::Detail;
-            screens.push(render(&mut app, 120, 40));
-            app.state.mode = AppMode::Normal;
+            // Too narrow for the list beside the pane: only the pane is shown.
+            screens.push(render(&mut app, 70, 40));
             app.state.view = View::Insights;
             app.state.insights.breakdown = false;
             screens.push(render(&mut app, 120, 40));

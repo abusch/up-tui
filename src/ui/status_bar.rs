@@ -2,15 +2,14 @@ use opaline::names::tokens;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Padding, Paragraph};
 
-use crate::app::state::{AppMode, AppState, View};
+use crate::app::state::{AppState, View};
 
 /// Key hints in normal mode (and behind the theme picker, which shows its own).
 const NORMAL_HINTS: &[(&str, &str)] = &[
     ("h/l", "account"),
     ("j/k", "move"),
     ("[/]", "day"),
-    ("Enter", "open"),
-    ("o", "detail"),
+    ("Enter", "detail"),
     ("i", "insights"),
     ("a", "sidebar"),
     ("r", "refresh"),
@@ -24,8 +23,7 @@ const FILTERED_HINTS: &[(&str, &str)] = &[
     ("h/l", "account"),
     ("j/k", "move"),
     ("[/]", "day"),
-    ("Enter", "open"),
-    ("o", "detail"),
+    ("Enter", "detail"),
     ("r", "refresh"),
     ("q", "quit"),
 ];
@@ -55,25 +53,15 @@ const BREAKDOWN_HINTS: &[(&str, &str)] = &[
     ("q", "quit"),
 ];
 
-/// Key hints while the detail popup is open.
-const DETAIL_HINTS: &[(&str, &str)] = &[
-    ("j/k", "prev/next transaction"),
-    ("[/]", "prev/next day"),
-    ("Esc/Enter/q", "close"),
-];
-
 pub fn draw_status_bar(buf: &mut Buffer, area: Rect, state: &AppState) {
     let info: Style = state.theme.color(tokens::INFO).into();
     let fg: Style = state.theme.color(tokens::TEXT_DIM).into();
 
-    let hints = match state.mode {
-        AppMode::Detail => DETAIL_HINTS,
-        AppMode::Normal | AppMode::Theme(_) => match state.view {
-            View::Transactions if state.filter.is_some() => FILTERED_HINTS,
-            View::Transactions => NORMAL_HINTS,
-            View::Insights if state.insights.breakdown => BREAKDOWN_HINTS,
-            View::Insights => INSIGHTS_HINTS,
-        },
+    let hints = match state.view {
+        View::Transactions if state.filter.is_some() => FILTERED_HINTS,
+        View::Transactions => NORMAL_HINTS,
+        View::Insights if state.insights.breakdown => BREAKDOWN_HINTS,
+        View::Insights => INSIGHTS_HINTS,
     };
     let spans: Vec<Span> = hints
         .iter()

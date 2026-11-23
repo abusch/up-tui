@@ -159,7 +159,6 @@ impl App {
     fn handle_key(&mut self, key: KeyEvent) {
         match self.state.mode {
             AppMode::Normal => self.handle_normal_key(key),
-            AppMode::Detail => self.handle_detail_key(key),
             AppMode::Theme(ref mut selector) => {
                 let action = selector.handle_key(key);
                 // The picker previews the highlighted theme (and applies the chosen one,
@@ -222,11 +221,6 @@ impl App {
             }
             _ if self.state.view == View::Insights => self.handle_insights_key(key),
             KeyCode::Enter => {
-                if self.state.selected_transaction().is_some() {
-                    self.state.mode = AppMode::Detail;
-                }
-            }
-            KeyCode::Char('o') => {
                 self.state.show_detail = !self.state.show_detail;
             }
             _ => self.handle_navigation_key(key),
@@ -272,22 +266,6 @@ impl App {
             KeyCode::Esc | KeyCode::Backspace => insights.breakdown = false,
             _ => {}
         }
-    }
-
-    /// Keys while the detail popup is open: it can be closed, and the navigation keys
-    /// move through the transactions, with the popup showing the selected one.
-    fn handle_detail_key(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Char('Q') => {
-                self.state.mode = AppMode::Normal;
-            }
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.state.should_quit = true;
-            }
-            _ => self.handle_navigation_key(key),
-        }
-
-        self.load_tab(self.state.active_tab);
     }
 
     /// Keys that move the selection in the transaction list (the active tab's, or the

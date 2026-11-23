@@ -136,8 +136,6 @@ impl CategorySelection {
 
 pub enum AppMode {
     Normal,
-    /// The selected transaction's details are shown in a popup.
-    Detail,
     Theme(ThemeSelectorState),
 }
 
