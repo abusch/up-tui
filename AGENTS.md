@@ -34,6 +34,10 @@ src/
     transaction_list.rs, transaction_detail.rs, status_bar.rs, help.rs, qr_code.rs
 ```
 
+## API
+
+The app makes use of the [publicly documented Up API](https://developer.up.com.au/llms.txt).
+
 ## Configuration
 
 Read from `$XDG_CONFIG_HOME/up-tui/config.toml` (if set and absolute), else `~/.config/up-tui/config.toml`, on every platform, using `etcetera`'s `Xdg` strategy directly (not `choose_base_strategy()`, which picks `AppData` on Windows, nor the native strategy, which picks `~/Library/Application Support` on macOS). The config (`api_token`, and an optional opaline `theme` id) is validated before the TUI starts, and errors are returned from `main()`.
