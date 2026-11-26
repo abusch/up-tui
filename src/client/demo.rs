@@ -21,12 +21,12 @@ use rootcause::{Result, bail};
 
 use super::models::{
     Account, AccountType, CardPurchaseMethod, Cashback, Category, Customer, HoldInfo, MoneyObject,
-    Note, OwnershipType, PaginatedResponse, PaginationOptions, RoundUp, Transaction,
+    Note, OwnershipType, PaginatedResponse, RoundUp, Transaction, TransactionPage,
     TransactionStatus,
 };
 
 /// How many days back the transactions go (including today).
-const DAYS: i32 = 120;
+const DAYS: i32 = 366;
 /// Simulated network latency for every request, so that loading states show.
 const LATENCY: Duration = Duration::from_millis(300);
 const SEED: u64 = 0x00c0_ffee;
@@ -224,39 +224,77 @@ impl DemoBank {
     pub async fn get_transactions(
         &self,
         account_id: &str,
-        opts: PaginationOptions,
+        page: TransactionPage,
+        page_size: u32,
     ) -> Result<PaginatedResponse<Transaction>> {
         tokio::time::sleep(LATENCY).await;
-        self.transactions_page(account_id, opts)
+        self.transactions_page(account_id, &page, page_size)
     }
 
-    /// A page of an account's transactions: the first one, or the one at
-    /// `opts.next_url`, which is a URL returned with a previous page.
+    /// A page of an account's transactions: the first one in a range, or the one at a
+    /// URL returned with a previous page. A range includes `since` but not `until`.
     fn transactions_page(
         &self,
         account_id: &str,
-        opts: PaginationOptions,
+        page: &TransactionPage,
+        page_size: u32,
     ) -> Result<PaginatedResponse<Transaction>> {
         let Some(all) = self.transactions.get(account_id) else {
             bail!("No such account: {account_id}");
         };
-        let start = match &opts.next_url {
-            None => 0,
-            Some(url) => match url.rsplit_once("offset=").map(|(_, n)| n.parse()) {
-                Some(Ok::<usize, _>(offset)) => offset,
-                _ => bail!("Invalid page URL: {url}"),
+        let (since, until, start) = match page {
+            TransactionPage::First { since, until } => (*since, *until, 0),
+            TransactionPage::Next(url) => match parse_page_url(url) {
+                Some(parsed) => parsed,
+                None => bail!("Invalid page URL: {url}"),
             },
         };
-        let page_size = usize::try_from(opts.page_size).unwrap_or(usize::MAX).max(1);
-        let end = start.saturating_add(page_size).min(all.len());
-        let data = all.get(start..end).unwrap_or_default().to_vec();
-        let next_page_url = (end < all.len())
-            .then(|| format!("demo://accounts/{account_id}/transactions?offset={end}"));
+        let in_range: Vec<&Transaction> = all
+            .iter()
+            .filter(|t| since.is_none_or(|since| t.created_at >= since))
+            .filter(|t| until.is_none_or(|until| t.created_at < until))
+            .collect();
+        let page_size = usize::try_from(page_size).unwrap_or(usize::MAX).max(1);
+        let end = start.saturating_add(page_size).min(in_range.len());
+        let data = in_range
+            .get(start..end)
+            .unwrap_or_default()
+            .iter()
+            .map(|&t| t.clone())
+            .collect();
+        let next_page_url = (end < in_range.len()).then(|| {
+            let bound = |t: Option<Timestamp>| t.map(|t| t.to_string()).unwrap_or_default();
+            format!(
+                "demo://accounts/{account_id}/transactions?since={}&until={}&offset={end}",
+                bound(since),
+                bound(until)
+            )
+        });
         Ok(PaginatedResponse {
             data,
             next_page_url,
         })
     }
+}
+
+/// The range and offset in a page URL made by `DemoBank::transactions_page`.
+fn parse_page_url(url: &str) -> Option<(Option<Timestamp>, Option<Timestamp>, usize)> {
+    let (_, query) = url.split_once('?')?;
+    let (mut since, mut until, mut offset) = (None, None, None);
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=')?;
+        let bound = || match value {
+            "" => Some(None),
+            value => value.parse().ok().map(Some),
+        };
+        match key {
+            "since" => since = bound()?,
+            "until" => until = bound()?,
+            "offset" => offset = Some(value.parse().ok()?),
+            _ => return None,
+        }
+    }
+    Some((since, until, offset?))
 }
 
 /// An amount in Australian dollars, from cents.
@@ -777,19 +815,19 @@ mod tests {
             .unwrap()
     }
 
-    fn all_pages(bank: &DemoBank, account_id: &str, page_size: u32) -> Vec<Vec<Transaction>> {
+    fn all_pages(
+        bank: &DemoBank,
+        account_id: &str,
+        first: TransactionPage,
+    ) -> Vec<Vec<Transaction>> {
         let mut pages = Vec::new();
-        let mut next_url = None;
+        let mut next = first;
         loop {
-            let opts = PaginationOptions {
-                page_size,
-                next_url,
-            };
-            let page = bank.transactions_page(account_id, opts).unwrap();
+            let page = bank.transactions_page(account_id, &next, 100).unwrap();
             pages.push(page.data);
-            next_url = page.next_page_url;
-            if next_url.is_none() {
-                return pages;
+            match page.next_page_url {
+                Some(url) => next = TransactionPage::Next(url),
+                None => return pages,
             }
         }
     }
@@ -846,22 +884,33 @@ mod tests {
     #[test]
     fn pages_follow_on_until_the_last() {
         let bank = DemoBank::new(&now());
-        let pages = all_pages(&bank, SPENDING, 100);
+        let all = &bank.transactions[SPENDING];
+        let ids = |txns: &mut dyn Iterator<Item = &Transaction>| -> Vec<String> {
+            txns.map(|t| t.id.clone()).collect()
+        };
+        let pages = all_pages(&bank, SPENDING, TransactionPage::NEWEST);
         assert!(pages.len() > 2);
         assert!(pages[..pages.len() - 1].iter().all(|p| p.len() == 100));
-        let paged: Vec<_> = pages.iter().flatten().map(|t| &t.id).collect();
-        let all: Vec<_> = bank.transactions[SPENDING].iter().map(|t| &t.id).collect();
-        assert_eq!(paged, all);
-        assert!(
-            bank.transactions_page(
-                SPENDING,
-                PaginationOptions {
-                    page_size: 100,
-                    next_url: Some("nonsense".to_string()),
-                }
-            )
-            .is_err()
+        assert_eq!(ids(&mut pages.iter().flatten()), ids(&mut all.iter()));
+
+        // A range includes its start but not its end, through all its pages.
+        let (since, until) = (all[450].created_at, all[50].created_at);
+        let range = TransactionPage::First {
+            since: Some(since),
+            until: Some(until),
+        };
+        let pages = all_pages(&bank, SPENDING, range);
+        assert!(pages.len() > 2);
+        let expected = all
+            .iter()
+            .filter(|t| t.created_at >= since && t.created_at < until);
+        assert_eq!(
+            ids(&mut pages.iter().flatten()),
+            ids(&mut expected.into_iter())
         );
+
+        let nonsense = TransactionPage::Next("nonsense".to_string());
+        assert!(bank.transactions_page(SPENDING, &nonsense, 100).is_err());
     }
 
     #[test]
@@ -919,6 +968,7 @@ mod tests {
         let mut app = App::new(Client::Demo(DemoBank::new(now)), None);
         let state = &mut app.state;
         state.tz = now.time_zone().clone();
+        state.fixed_now = Some(now.timestamp());
         state.set_accounts(accounts);
         state.categories = Categories::new(categories);
         load_period(&mut app, now);
@@ -931,15 +981,26 @@ mod tests {
         let state = &mut app.state;
         let since = state.period.start(now.date(), &state.tz).unwrap();
         for tab in &mut state.tabs {
-            while let Some(fetch) = tab.store.next_fetch(since, false) {
-                let opts = PaginationOptions {
-                    page_size: crate::app::store::PAGE_SIZE,
-                    next_url: fetch.url,
-                };
-                let page = bank.transactions_page(&tab.account.id, opts).unwrap();
-                tab.page_loaded(fetch.generation, page).unwrap();
+            loop {
+                let fetches = tab.store.next_fetches(since, false);
+                if fetches.is_empty() {
+                    break;
+                }
+                // The results of parallel fetches can arrive in any order.
+                for fetch in fetches.into_iter().rev() {
+                    let page_size = crate::app::store::PAGE_SIZE;
+                    let page = bank.transactions_page(&tab.account.id, &fetch.page, page_size);
+                    tab.page_loaded(fetch.id, page.unwrap()).unwrap();
+                }
             }
-            assert!(tab.store.recent().is_some());
+            // Exactly the period's transactions, as the API has them.
+            let expected: Vec<_> = bank.transactions[&tab.account.id]
+                .iter()
+                .filter(|t| t.created_at >= since)
+                .map(|t| &t.id)
+                .collect();
+            let recent: Vec<_> = tab.store.recent().unwrap().iter().map(|t| &t.id).collect();
+            assert_eq!(recent, expected, "{} since {since}", tab.account.id);
         }
     }
 
@@ -1024,9 +1085,20 @@ mod tests {
         assert!(app.state.tabs[0].store.loading().is_some());
 
         // Back to this month while that's loading: it's already there.
-        press(&mut app, &[KeyCode::Char('p')]);
+        press(&mut app, &[KeyCode::Char('P')]);
         assert_eq!(app.state.period, Period::ThisMonth);
         assert!(oldest(&app).is_some());
+
+        // This week is within this month (on 23 November): it's there too, without
+        // the transactions from before Monday.
+        press(&mut app, &[KeyCode::Char('P')]);
+        assert_eq!(app.state.period, Period::ThisWeek);
+        assert!(oldest(&app).unwrap().created_at >= "2026-11-22T13:00:00Z".parse().unwrap());
+
+        // And back round to this year, which goes further back than anything loaded.
+        press(&mut app, &[KeyCode::Char('P')]);
+        assert_eq!(app.state.period, Period::ThisYear);
+        assert!(app.state.tabs[0].store.recent().is_none());
     }
 
     #[tokio::test]
@@ -1088,12 +1160,14 @@ mod tests {
         let mut app = demo_app(&now());
         let mut screens = Vec::new();
         for tab in 0..app.state.tabs.len() {
-            // The Insights view over the other period.
+            // The Insights view over the other periods.
             app.state.active_tab = tab;
             app.state.view = View::Insights;
-            app.state.period = Period::Last30Days;
-            load_period(&mut app, &now());
-            screens.push(render(&mut app, 120, 40));
+            for period in [Period::ThisWeek, Period::Last30Days, Period::ThisYear] {
+                app.state.period = period;
+                load_period(&mut app, &now());
+                screens.push(render(&mut app, 120, 40));
+            }
             app.state.period = Period::ThisMonth;
             load_period(&mut app, &now());
 

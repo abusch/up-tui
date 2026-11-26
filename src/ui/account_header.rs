@@ -308,12 +308,12 @@ mod tests {
     fn totals_show_when_they_are_loading_and_not_when_they_failed() {
         let mut state = state_with_saver();
         let since = "2026-11-01T00:00:00Z".parse().unwrap();
-        let fetch = state.tabs[0].store.next_fetch(since, false).unwrap();
+        let fetch = state.tabs[0].store.next_fetches(since, false).remove(0);
         assert_eq!(
             render(&state, 60)[1],
             " $2400.00                            Last 30 days  loading…"
         );
-        state.tabs[0].store.load_failed(fetch.generation);
+        state.tabs[0].store.load_failed(fetch.id);
         assert_eq!(render(&state, 60)[1], " $2400.00");
     }
 

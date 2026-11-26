@@ -18,7 +18,10 @@ const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             ("l / Tab", "Next account"),
             ("h / Shift+Tab", "Previous account"),
             ("i", "Switch between transactions and Insights"),
-            ("p", "Switch between this month and the last 30 days"),
+            (
+                "p / P",
+                "Next / previous period: week, month, 30 days, year",
+            ),
             ("a", "Toggle the account sidebar"),
             ("r", "Refresh accounts and transactions"),
             ("t", "Open the theme picker"),
