@@ -7,8 +7,8 @@ A terminal UI for [Up Banking](https://up.com.au/) that lets you browse your acc
 ## Features
 
 - View all your Up accounts in a sidebar, grouped by type, with their balances and the total
-- Account header with the selected account's balance, type, and money in and out this month (or over the last 30 days), with a bar showing the spending by category
-- Insights view: the balance and spending by category this month (or over the last 30 days), with a breakdown of each category by subcategory
+- Account header with the selected account's balance, type, and money in and out this month (or this week, over the last 30 days, or this year), with a bar showing the spending by category
+- Insights view: the balance and spending by category over the same period, with a breakdown of each category by subcategory
 - Browse transactions grouped by day, with description, amount, and time
 - Detail pane showing full transaction information, including status, category hierarchy, tags, foreign amounts, round-ups, cashback, and card details
 - Vim-style keyboard navigation
@@ -51,7 +51,7 @@ Or build from source with `cargo run`.
 
 ## Demo mode
 
-To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`). It shows made-up accounts and a few months of transactions instead of yours, and needs no API token or config file (it uses the theme set in your config file, if there is one, and reports an error if that file is invalid). The data is generated relative to today, so it's the same on every run on a given day. It's also handy for screenshots that don't show your own finances.
+To try up-tui without an Up account, run `up --demo` (or `cargo run -- --demo`). It shows made-up accounts and a year of transactions instead of yours, and needs no API token or config file (it uses the theme set in your config file, if there is one, and reports an error if that file is invalid). The data is generated relative to today, so it's the same on every run on a given day. It's also handy for screenshots that don't show your own finances.
 
 ## Key Bindings
 
@@ -70,11 +70,13 @@ The status bar shows the most useful keys for what's on screen; press `?` to see
 | `o`                    | Show a QR code to open it in Up's app    |
 | `a`                    | Toggle the account sidebar               |
 | `i`                    | Switch between transactions and Insights |
-| `p`                    | Switch between this month and 30 days    |
+| `p` / `P`              | Next / previous period                   |
 | `r`                    | Refresh accounts and transactions        |
 | `t`                    | Open the theme picker                    |
 | `?`                    | Show or hide the list of key bindings    |
 | `q` / `Ctrl+C`         | Quit                                     |
+
+The period is this week (from Monday), this month (the default), the last 30 days, or this year.
 
 In the Insights view, `j` / `k` select a category, `Enter` shows its breakdown by subcategory (where `j` / `k` select a subcategory), and `Esc` goes back to the list of categories. `Enter` on a subcategory shows its transactions over the period in the transaction list, with a bar above it saying what it's filtered by; `Esc` goes back to the breakdown.
 

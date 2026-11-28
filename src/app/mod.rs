@@ -120,7 +120,7 @@ impl App {
             },
             AppEvent::TransactionsLoaded {
                 account_id,
-                generation,
+                fetch,
                 result,
             } => {
                 let Some(idx) = self.state.tab_index(&account_id) else {
@@ -128,13 +128,13 @@ impl App {
                 };
                 let tab = &mut self.state.tabs[idx];
                 match result {
-                    Ok(page) => match tab.page_loaded(generation, page) {
+                    Ok(page) => match tab.page_loaded(fetch, page) {
                         None => return, // superseded by a later fetch
                         Some(PageOutcome::Replaced) => self.success("Transactions loaded"),
                         Some(PageOutcome::Appended | PageOutcome::Staged) => {}
                     },
                     Err(e) => {
-                        if !tab.store.load_failed(generation) {
+                        if !tab.store.load_failed(fetch) {
                             return; // superseded by a later fetch
                         }
                         self.error(format!(
@@ -254,6 +254,9 @@ impl App {
             // The fetch it needs (if it starts earlier) is started below.
             KeyCode::Char('p') => {
                 self.state.period = self.state.period.next();
+            }
+            KeyCode::Char('P') => {
+                self.state.period = self.state.period.previous();
             }
             KeyCode::Char('a') => {
                 self.state.show_sidebar = !self.state.show_sidebar;
@@ -382,8 +385,8 @@ impl App {
         }
     }
 
-    /// Start the fetch the tab needs next, if any (see `TransactionStore::next_fetch`).
-    /// Returns whether one was started.
+    /// Start the fetches the tab needs next, if any (see
+    /// `TransactionStore::next_fetches`). Returns whether any were started.
     fn load_tab(&mut self, tab_index: usize) -> bool {
         let Some(since) = self.period_start() else {
             return false;
@@ -393,12 +396,13 @@ impl App {
             return false;
         };
         let wants_more = tab.wants_more(lookahead);
-        let Some(fetch) = tab.store.next_fetch(since, wants_more) else {
-            return false;
-        };
+        let fetches = tab.store.next_fetches(since, wants_more);
+        let started = !fetches.is_empty();
         let account_id = tab.account.id.clone();
-        self.spawn_fetch(account_id, fetch);
-        true
+        for fetch in fetches {
+            self.spawn_fetch(account_id.clone(), fetch);
+        }
+        started
     }
 
     /// Reload the tab's transactions from the newest page, superseding any fetch in
@@ -423,22 +427,19 @@ impl App {
     /// Fetch a page of an account's transactions, sending the result as
     /// `TransactionsLoaded`.
     fn spawn_fetch(&self, account_id: String, fetch: Fetch) {
-        let opts = PaginationOptions {
-            page_size: store::PAGE_SIZE,
-            next_url: fetch.url,
-        };
         // Pages fetched from the newest one (initial loads and refreshes) bypass the
         // HTTP cache, so a refresh gets up-to-date transactions.
         let reload = fetch.kind == LoadKind::Replace;
-        let generation = fetch.generation;
         let client = Arc::clone(&self.client);
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            let result = client.get_transactions(&account_id, opts, reload).await;
+            let result = client
+                .get_transactions(&account_id, fetch.page, store::PAGE_SIZE, reload)
+                .await;
             let _ = tx
                 .send(AppEvent::TransactionsLoaded {
                     account_id,
-                    generation,
+                    fetch: fetch.id,
                     result,
                 })
                 .await;

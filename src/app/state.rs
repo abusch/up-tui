@@ -9,7 +9,7 @@ use ratatui::style::Color;
 use crate::app::categories::Categories;
 use crate::app::insights::{CategorySpending, spending_in_category};
 use crate::app::list::ListSelection;
-use crate::app::store::{PageOutcome, TransactionStore};
+use crate::app::store::{FetchId, PageOutcome, TransactionStore};
 use crate::client::models::{Account, MoneyObject, PaginatedResponse, Transaction};
 
 /// The period up to today that the account header's totals, the Insights view and
@@ -17,53 +17,84 @@ use crate::client::models::{Account, MoneyObject, PaginatedResponse, Transaction
 /// one for all of them, so they always agree.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Period {
+    /// The week so far, from Monday.
+    ThisWeek,
     /// The calendar month so far, as Up's app shows by default.
     #[default]
     ThisMonth,
     /// The last 30 days, including today.
     Last30Days,
+    /// The calendar year so far.
+    ThisYear,
 }
 
 impl Period {
+    /// All the periods, in the order `next()` cycles through them.
+    const ALL: [Period; 4] = [
+        Period::ThisWeek,
+        Period::ThisMonth,
+        Period::Last30Days,
+        Period::ThisYear,
+    ];
+
     /// The next period, cycling through them all.
     pub fn next(self) -> Self {
-        match self {
-            Period::ThisMonth => Period::Last30Days,
-            Period::Last30Days => Period::ThisMonth,
-        }
+        self.cycle(1)
+    }
+
+    /// The previous period, cycling through them all the other way.
+    pub fn previous(self) -> Self {
+        self.cycle(Self::ALL.len() - 1)
+    }
+
+    fn cycle(self, steps: usize) -> Self {
+        let index = Self::ALL.iter().position(|&p| p == self).unwrap_or(0);
+        Self::ALL[(index + steps) % Self::ALL.len()]
     }
 
     /// The period's name as of `today`, e.g. "November" or "Last 30 days".
     pub fn name(self, today: Date) -> String {
         match self {
+            Period::ThisWeek => "This week".to_string(),
             Period::ThisMonth => today.strftime("%B").to_string(),
             Period::Last30Days => "Last 30 days".to_string(),
+            Period::ThisYear => today.year().to_string(),
         }
     }
 
     /// The period at the end of a sentence as of `today`, e.g. "in November" (as in "spent in November").
     pub fn phrase(self, today: Date) -> String {
         match self {
+            Period::ThisWeek => "this week".to_string(),
             Period::ThisMonth => format!("in {}", today.strftime("%B")),
             Period::Last30Days => "in the last 30 days".to_string(),
+            Period::ThisYear => format!("in {}", today.year()),
         }
     }
 
     /// The period's first day, as of `today`.
     pub fn first_day(self, today: Date) -> Date {
         match self {
+            Period::ThisWeek => {
+                let days_since_monday = today.weekday().to_monday_zero_offset();
+                today.saturating_sub(i64::from(days_since_monday).days())
+            }
             Period::ThisMonth => today.first_of_month(),
             Period::Last30Days => today.saturating_sub(29.days()),
+            Period::ThisYear => today.first_of_year(),
         }
     }
 
-    /// The period's last day, as of `today`: today, or the last day of this month, of
-    /// which only the days up to today have happened. The balance chart spans the days
-    /// from `first_day()` to this, so it fills in as the month goes on.
+    /// The period's last day, as of `today`: today, or the last day of this week,
+    /// month or year, of which only the days up to today have happened. The balance
+    /// chart spans the days from `first_day()` to this, so it fills in as the period
+    /// goes on.
     pub fn last_day(self, today: Date) -> Date {
         match self {
+            Period::ThisWeek => self.first_day(today).saturating_add(6.days()),
             Period::ThisMonth => today.last_of_month(),
             Period::Last30Days => today,
+            Period::ThisYear => today.last_of_year(),
         }
     }
 
@@ -237,18 +268,18 @@ impl TabState {
         Some((total(false)?, total(true)?))
     }
 
-    /// Pass a page loaded by the fetch with this generation to the store (see
-    /// `TransactionStore::page_loaded`). When it replaces the list, the same transaction
+    /// Pass a page loaded by the fetch with this id to the store (see
+    /// `TransactionStore::page_loaded`). When it changes the list, the same transaction
     /// stays selected if it's still there, and otherwise the selection is clamped to the
     /// new list.
     pub fn page_loaded(
         &mut self,
-        generation: u64,
+        fetch: FetchId,
         page: PaginatedResponse<Transaction>,
     ) -> Option<PageOutcome> {
         let selected_id = self.txns().get(self.list.selected).map(|t| t.id.clone());
-        let outcome = self.store.page_loaded(generation, page)?;
-        if outcome == PageOutcome::Replaced {
+        let outcome = self.store.page_loaded(fetch, page)?;
+        if outcome != PageOutcome::Staged {
             let txns = self.txns();
             self.list.selected = selected_id
                 .and_then(|id| txns.iter().position(|t| t.id == id))
@@ -295,6 +326,10 @@ pub struct AppState {
     /// Local time zone used to display times and group transactions by day.
     /// Looked up once at startup.
     pub tz: TimeZone,
+    /// The time it always is, in tests that need the app to agree with data made for
+    /// a fixed time (such as the demo data's).
+    #[cfg(test)]
+    pub fixed_now: Option<Timestamp>,
     /// Whether the detail pane is visible.
     pub show_detail: bool,
     /// Whether the account sidebar is visible.
@@ -333,6 +368,8 @@ impl AppState {
             categories: Categories::default(),
             theme: opaline::current(),
             tz: TimeZone::system(),
+            #[cfg(test)]
+            fixed_now: None,
             show_detail: false,
             show_sidebar: true,
             view: View::Transactions,
@@ -378,6 +415,10 @@ impl AppState {
 
     /// The current local date, in `tz`.
     pub fn today(&self) -> Date {
+        #[cfg(test)]
+        if let Some(now) = self.fixed_now {
+            return now.to_zoned_datetime(self.tz.clone()).date();
+        }
         Timestamp::now().to_zoned_datetime(self.tz.clone()).date()
     }
 
@@ -542,10 +583,7 @@ pub(crate) mod tests {
             data: transactions,
             next_page_url: None,
         };
-        assert_eq!(
-            tab.page_loaded(fetch.generation, page),
-            Some(PageOutcome::Replaced)
-        );
+        assert_eq!(tab.page_loaded(fetch.id, page), Some(PageOutcome::Replaced));
     }
 
     #[test]
@@ -669,10 +707,14 @@ pub(crate) mod tests {
         assert_eq!(start(Period::ThisMonth), "2026-10-31T13:00:00Z");
         // 30 days including today: from midnight on 25 October.
         assert_eq!(start(Period::Last30Days), "2026-10-24T13:00:00Z");
+        // 23 November is a Monday: the week starts today.
+        assert_eq!(start(Period::ThisWeek), "2026-11-22T13:00:00Z");
+        // From midnight on 1 January, also in daylight saving time.
+        assert_eq!(start(Period::ThisYear), "2025-12-31T13:00:00Z");
     }
 
     #[test]
-    fn a_month_spans_all_its_days_and_the_last_30_days_end_today() {
+    fn a_week_month_or_year_spans_all_its_days_and_the_last_30_days_end_today() {
         let date = |s: &str| s.parse::<Date>().unwrap();
         let days = |period: Period, today| {
             let today = date(today);
@@ -690,13 +732,36 @@ pub(crate) mod tests {
             days(Period::Last30Days, "2026-03-01"),
             (date("2026-01-31"), date("2026-03-01"))
         );
+        // Weeks run from Monday to Sunday, across the end of a month or year.
+        assert_eq!(
+            days(Period::ThisWeek, "2026-11-23"),
+            (date("2026-11-23"), date("2026-11-29"))
+        );
+        assert_eq!(
+            days(Period::ThisWeek, "2027-01-03"),
+            (date("2026-12-28"), date("2027-01-03"))
+        );
+        assert_eq!(
+            days(Period::ThisYear, "2028-02-29"),
+            (date("2028-01-01"), date("2028-12-31"))
+        );
         let today = date("2026-11-23");
         assert_eq!(Period::ThisMonth.name(today), "November");
         assert_eq!(Period::ThisMonth.phrase(today), "in November");
         assert_eq!(Period::Last30Days.name(today), "Last 30 days");
         assert_eq!(Period::Last30Days.phrase(today), "in the last 30 days");
-        // Cycling goes through them all.
-        assert_eq!(Period::default().next().next(), Period::default());
+        assert_eq!(Period::ThisWeek.name(today), "This week");
+        assert_eq!(Period::ThisWeek.phrase(today), "this week");
+        assert_eq!(Period::ThisYear.name(today), "2026");
+        assert_eq!(Period::ThisYear.phrase(today), "in 2026");
+        // Cycling goes through them all, either way, starting with the last 30 days
+        // after the default.
+        assert_eq!(Period::default().next(), Period::Last30Days);
+        for period in Period::ALL {
+            assert_eq!(period.next().previous(), period);
+        }
+        let cycled = (0..Period::ALL.len()).fold(Period::default(), |p, _| p.next());
+        assert_eq!(cycled, Period::default());
     }
 
     #[test]

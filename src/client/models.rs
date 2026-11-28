@@ -319,6 +319,29 @@ impl Default for PaginationOptions {
     }
 }
 
+/// Which page of an account's transactions to get. Pages are newest first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransactionPage {
+    /// The first page of the transactions created between `since` and `until`
+    /// (`None` leaves that end open). Up's API doesn't say whether the ends are
+    /// included, so callers overlap ranges and drop the duplicates.
+    First {
+        since: Option<Timestamp>,
+        until: Option<Timestamp>,
+    },
+    /// The page at a URL returned with the one before it
+    /// (`PaginatedResponse::next_page_url`), in the same range.
+    Next(String),
+}
+
+impl TransactionPage {
+    /// The first page of all the transactions: the newest ones.
+    pub const NEWEST: TransactionPage = TransactionPage::First {
+        since: None,
+        until: None,
+    };
+}
+
 #[derive(Debug)]
 pub struct PaginatedResponse<T> {
     pub data: Vec<T>,

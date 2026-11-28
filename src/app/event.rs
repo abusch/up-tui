@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 
 use rootcause::Result;
 
+use crate::app::store::FetchId;
 use crate::client::models::{Account, Category, PaginatedResponse, Transaction};
 
 pub enum AppEvent {
@@ -20,8 +21,8 @@ pub enum AppEvent {
     TransactionsLoaded {
         /// Identifies the tab by account, since tab indices can shift when accounts reload.
         account_id: String,
-        /// The `Fetch::generation` of the fetch; stale results are dropped by the store.
-        generation: u64,
+        /// The `Fetch::id` of the fetch; the store drops results it no longer wants.
+        fetch: FetchId,
         result: Result<PaginatedResponse<Transaction>>,
     },
     CategoriesLoaded(Result<Vec<Category>>),
